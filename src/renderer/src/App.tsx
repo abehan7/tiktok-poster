@@ -92,7 +92,8 @@ function AccountButton() {
     try {
       setAccount(await poster.connect());
     } catch (err) {
-      setError(errorMessage(err));
+      const message = errorMessage(err);
+      setError(message === "Login cancelled." ? null : message);
     } finally {
       setBusy(false);
     }
@@ -108,9 +109,18 @@ function AccountButton() {
             {error ?? accountError}
           </span>
         )}
-        <Button variant="primary" size="sm" onClick={connect} disabled={busy}>
-          {busy ? "Waiting for browser…" : "Connect TikTok"}
-        </Button>
+        {busy ? (
+          <>
+            <span className="text-xs text-muted">Waiting for browser…</span>
+            <Button size="sm" onClick={() => void poster.cancelConnect()}>
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <Button variant="primary" size="sm" onClick={connect}>
+            Connect TikTok
+          </Button>
+        )}
       </div>
     );
   }

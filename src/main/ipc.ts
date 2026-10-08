@@ -5,6 +5,7 @@ import type { CarouselFolder, PosterApi } from "@shared/contract";
 import { isAllowed, toLocalFile } from "./media";
 import type { PostingService } from "./posting/PostingService";
 import { createImageHost } from "./storage/ImageHost";
+import { cancelAuthorization } from "./tiktok/oauth";
 import type { HistoryStore } from "./store/history";
 import type { SettingsStore } from "./store/settings";
 import type { TikTokSession } from "./tiktok/TikTokSession";
@@ -78,6 +79,7 @@ export function registerIpc(d: Deps): void {
 
     getAccount: () => d.session.getAccount(),
     connect: () => d.session.connect(),
+    cancelConnect: () => cancelAuthorization(),
     disconnect: () => d.session.disconnect(),
     getCreatorInfo: () => d.session.creatorInfo(),
 

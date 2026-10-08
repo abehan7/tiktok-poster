@@ -13,7 +13,7 @@ const invoke =
 
 const channels = [
   "getSettings", "saveSettings", "testR2", "chooseFolder", "getAccentColor", "contextMenu",
-  "getAccount", "connect", "disconnect", "getCreatorInfo",
+  "getAccount", "connect", "cancelConnect", "disconnect", "getCreatorInfo",
   "pickVideo", "pickImages", "pickCarouselFolder", "registerFiles",
   "postVideo", "postPhotos",
   "listHistory", "refreshStatus", "removeHistory", "openExternal",

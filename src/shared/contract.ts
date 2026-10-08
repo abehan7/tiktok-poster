@@ -163,6 +163,8 @@ export interface PosterApi {
 
   getAccount(): Promise<Account | null>;
   connect(): Promise<Account>;
+  /** Abandons a login that is still waiting for the browser. */
+  cancelConnect(): Promise<void>;
   disconnect(): Promise<void>;
   getCreatorInfo(): Promise<CreatorInfo>;
 

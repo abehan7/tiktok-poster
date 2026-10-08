@@ -22,15 +22,25 @@ const page = (title: string, body: string) =>
   `<body style="font:16px -apple-system,system-ui;display:grid;place-items:center;height:100vh;margin:0;background:#111;color:#eee">` +
   `<div style="text-align:center"><h2>${title}</h2><p style="color:#aaa">${body}</p></div></body>`;
 
+/** The login currently waiting for its redirect, if any. Only one can hold the port. */
+let pending: { cancel(reason: Error): Promise<void> } | null = null;
+
+/** Abandons the in-flight login (e.g. TikTok showed an error page and never redirected). */
+export async function cancelAuthorization(): Promise<void> {
+  await pending?.cancel(new Error("Login cancelled."));
+}
+
 /**
  * Opens the TikTok consent page in the default browser and waits for the
  * redirect on a one-shot loopback server. Resolves with the authorization code.
+ * Starting a new login cancels a previous one that is still waiting.
  */
-export function waitForAuthorizationCode(opts: {
+export async function waitForAuthorizationCode(opts: {
   authorizeUrl: (state: string) => string;
   port: number;
   timeoutMs?: number;
 }): Promise<string> {
+  await cancelAuthorization();
   const state = randomBytes(16).toString("hex");
 
   return new Promise((resolve, reject) => {
@@ -46,34 +56,42 @@ export function waitForAuthorizationCode(opts: {
 
       if (url.searchParams.get("state") !== state) {
         res.end(page("Login failed", "State mismatch. Start the login again from the app."));
-        return finish(new Error("OAuth state mismatch"));
+        return void finish(new Error("OAuth state mismatch"));
       }
       if (error || !code) {
         const description = url.searchParams.get("error_description") ?? error ?? "No code returned";
         res.end(page("Login cancelled", description));
-        return finish(new Error(`TikTok login failed: ${description}`));
+        return void finish(new Error(`TikTok login failed: ${description}`));
       }
       res.end(page("Connected to TikTok", "You can close this tab and go back to TikTok Poster."));
-      finish(null, code);
+      void finish(null, code);
     });
 
     const timer = setTimeout(
-      () => finish(new Error("Timed out waiting for TikTok login.")),
+      () => void finish(new Error("Timed out waiting for TikTok login.")),
       opts.timeoutMs ?? 5 * 60_000,
     );
 
     let done = false;
-    function finish(err: Error | null, code?: string) {
-      if (done) return;
+    /** Settles the login and resolves once the port is released. */
+    function finish(err: Error | null, code?: string): Promise<void> {
+      if (done) return Promise.resolve();
       done = true;
       clearTimeout(timer);
-      server.close();
+      if (pending === self) pending = null;
       if (err) reject(err);
       else resolve(code!);
+      return new Promise((r) => {
+        server.close(() => r());
+        server.closeAllConnections();
+      });
     }
 
+    const self = { cancel: (reason: Error) => finish(reason) };
+    pending = self;
+
     server.on("error", (err: NodeJS.ErrnoException) =>
-      finish(
+      void finish(
         err.code === "EADDRINUSE"
           ? new Error(`Port ${opts.port} is busy. Change the OAuth port in Settings (and in the TikTok portal).`)
           : err,
