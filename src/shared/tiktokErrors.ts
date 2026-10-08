@@ -29,5 +29,7 @@ const MESSAGES: Record<string, string> = {
 
 /** Plain-English message for a TikTok error/fail_reason code; falls back to TikTok's text plus the code. */
 export function describeTikTokError(code: string, message?: string): string {
+  // Entries saved before codes were kept only have TikTok's generic text for this case.
+  if (/integration guidelines/i.test(code)) return MESSAGES.unaudited_client_can_only_post_to_private_accounts;
   return MESSAGES[code] ?? (message && message !== code ? `${message} (${code})` : code);
 }
