@@ -6,7 +6,7 @@ import type { HistoryEntry, PhotoPostInput, VideoPostInput } from "@shared/contr
 import { toLocalFile } from "../media";
 import type { HistoryStore } from "../store/history";
 import { JsonFile } from "../store/jsonFile";
-import type { PostingService } from "./PostingService";
+import { photoContent, videoContent, type PostingService } from "./PostingService";
 
 type Job =
   | { entryId: string; kind: "video"; input: VideoPostInput }
@@ -57,7 +57,7 @@ export class Scheduler {
     );
     const [filePath] = await this.stashOrRollback(entry.id, [input.filePath]);
     this.save({ entryId: entry.id, kind: "video", input: { ...input, filePath } });
-    return this.withJob(entry);
+    return this.withJob(this.posting.update(entry.id, { content: videoContent(input, toLocalFile(filePath).url) }));
   }
 
   async schedulePhotos(input: PhotoPostInput, at: string): Promise<HistoryEntry> {
@@ -75,7 +75,12 @@ export class Scheduler {
     );
     const filePaths = await this.stashOrRollback(entry.id, input.filePaths);
     this.save({ entryId: entry.id, kind: "photo", input: { ...input, filePaths } });
-    return this.withJob(this.posting.update(entry.id, { thumbUrl: toLocalFile(filePaths[0]).url }));
+    return this.withJob(
+      this.posting.update(entry.id, {
+        thumbUrl: toLocalFile(filePaths[0]).url,
+        content: photoContent(input, filePaths.map((p) => toLocalFile(p).url)),
+      }),
+    );
   }
 
   reschedule(entryId: string, at: string): HistoryEntry {

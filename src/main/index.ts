@@ -74,7 +74,8 @@ function buildMenu() {
       submenu: [
         { label: "New Carousel", accelerator: "Cmd+1", click: () => navigate("carousel") },
         { label: "New Video", accelerator: "Cmd+2", click: () => navigate("video") },
-        { label: "History", accelerator: "Cmd+3", click: () => navigate("history") },
+        { label: "Calendar", accelerator: "Cmd+3", click: () => navigate("calendar") },
+        { label: "History", accelerator: "Cmd+4", click: () => navigate("history") },
         { type: "separator" },
         { role: "close" },
       ],

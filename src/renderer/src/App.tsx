@@ -1,20 +1,22 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { Film, History, Images, Settings } from "lucide-react";
+import { CalendarDays, Film, History, Images, Settings } from "lucide-react";
 import logo from "./assets/logo.png";
 import { AccountMenu } from "./components/AccountMenu";
 import { poster } from "./lib/api";
 import { AppStateProvider, useAppState } from "./lib/app-state";
 import { CarouselView } from "./views/CarouselView";
+import { CalendarView } from "./views/CalendarView";
 import { HistoryView } from "./views/HistoryView";
 import { SettingsView } from "./views/SettingsView";
 import { VideoView } from "./views/VideoView";
 
-type Tab = "video" | "carousel" | "history" | "settings";
+type Tab = "video" | "carousel" | "calendar" | "history" | "settings";
 
 const TABS: { id: Tab; label: string; icon: typeof Film; title: string }[] = [
   { id: "carousel", label: "Carousel", icon: Images, title: "New photo carousel" },
   { id: "video", label: "Video", icon: Film, title: "New video" },
+  { id: "calendar", label: "Calendar", icon: CalendarDays, title: "Calendar" },
   { id: "history", label: "History", icon: History, title: "History" },
   { id: "settings", label: "Settings", icon: Settings, title: "Settings" },
 ];
@@ -72,8 +74,9 @@ function Shell() {
           <AccountMenu onManage={() => setTab("settings")} />
         </header>
         <main className="flex-1 overflow-y-auto p-6">
-          {tab === "video" && <VideoView onPosted={() => setTab("history")} />}
-          {tab === "carousel" && <CarouselView onPosted={() => setTab("history")} />}
+          {tab === "video" && <VideoView onPosted={() => setTab("calendar")} />}
+          {tab === "carousel" && <CarouselView onPosted={() => setTab("calendar")} />}
+          {tab === "calendar" && <CalendarView />}
           {tab === "history" && <HistoryView />}
           {tab === "settings" && <SettingsView />}
         </main>

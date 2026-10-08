@@ -142,13 +142,23 @@ export function registerIpc(d: Deps): void {
       // media:// only serves files registered this launch; re-allow thumbnails that still exist.
       const entries = d.history.list();
       for (const e of entries) {
-        const p = e.thumbUrl && new URL(e.thumbUrl).searchParams.get("p");
-        if (p && existsSync(p)) toLocalFile(p);
+        const urls = [e.thumbUrl, e.content?.video, ...(e.content?.images ?? [])];
+        for (const u of urls) {
+          if (!u?.startsWith("media:")) continue;
+          const p = new URL(u).searchParams.get("p");
+          if (p && existsSync(p)) toLocalFile(p);
+        }
       }
       return d.scheduler.decorate(entries);
     },
     refreshStatus: (id) => d.posting.refresh(id),
     removeHistory: async (id) => d.history.remove(id),
+    setFinished: async (id, finished) => {
+      const e = d.history.get(id);
+      if (!e) throw new Error("That post is no longer in the history.");
+      if (finished && e.status !== "SEND_TO_USER_INBOX") throw new Error("Only drafts delivered to TikTok can be marked published.");
+      return d.scheduler.decorate([d.history.update(id, { finishedAt: finished ? new Date().toISOString() : null })])[0];
+    },
     openExternal: async (url) => {
       if (/^https:\/\//.test(url)) await shell.openExternal(url);
     },

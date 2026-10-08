@@ -6,6 +6,7 @@ import {
   TERMINAL_STATUSES,
   type HistoryEntry,
   type PhotoPostInput,
+  type PostContent,
   type Progress,
   type VideoPostInput,
 } from "@shared/contract";
@@ -83,6 +84,7 @@ export class PostingService {
       label: input.mode === "DIRECT" && input.title ? input.title : file.name,
       thumbUrl: file.url,
     });
+    this.update(entry.id, { content: videoContent(input, file.url) });
 
     return this.run(entry.id, async () => {
       const gw = this.session.gateway();
@@ -137,6 +139,7 @@ export class PostingService {
       label: input.title || input.description.split("\n")[0] || `${n} photos`,
       thumbUrl: first.url,
     });
+    this.update(entry.id, { content: photoContent(input, input.filePaths.map((p) => toLocalFile(p).url)) });
 
     return this.run(entry.id, async () => {
       const host = createImageHost(this.settings.get());
@@ -148,6 +151,8 @@ export class PostingService {
         urls.push(await host.put(`${folder}/${i + 1}.jpg`, jpeg, "image/jpeg"));
       }
 
+      // Point the stored content at the hosted copies so the post stays viewable later.
+      this.update(entry.id, { content: photoContent(input, urls) });
       this.progress(entry.id, "Asking TikTok to pull the images", 1);
       const direct = input.mode === "DIRECT";
       const { publishId } = await this.session.gateway().initPhoto(await this.session.accessToken(input.openId), {
@@ -202,6 +207,8 @@ export class PostingService {
       publishId: null,
       status: scheduledAt ? "SCHEDULED" : "UPLOADING",
       scheduledAt,
+      sentAt: scheduledAt ? null : now,
+      finishedAt: null,
       failReason: null,
       postIds: [],
       createdAt: now,
@@ -218,7 +225,7 @@ export class PostingService {
     fields: Pick<HistoryEntry, "kind" | "mode" | "label" | "thumbUrl">,
   ): HistoryEntry {
     if (!entryId) return this.createEntry(openId, fields);
-    return this.update(entryId, { status: "UPLOADING", failReason: null });
+    return this.update(entryId, { status: "UPLOADING", failReason: null, sentAt: new Date().toISOString() });
   }
 
   /** Runs the pre-publish work; a failure marks the entry FAILED and rethrows to the form. */
@@ -305,4 +312,28 @@ export function toTikTokJpeg(path: string): Buffer {
 
 function stamp(): string {
   return new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
+}
+
+export function videoContent(input: VideoPostInput, videoUrl: string | null): PostContent {
+  return {
+    title: input.title,
+    description: "",
+    images: [],
+    coverIndex: 0,
+    video: videoUrl,
+    privacyLevel: input.mode === "DIRECT" ? input.privacyLevel : null,
+    autoAddMusic: false,
+  };
+}
+
+export function photoContent(input: PhotoPostInput, images: string[]): PostContent {
+  return {
+    title: input.title,
+    description: input.description,
+    images,
+    coverIndex: input.coverIndex,
+    video: null,
+    privacyLevel: input.mode === "DIRECT" ? input.privacyLevel : null,
+    autoAddMusic: input.mode === "DIRECT" && input.autoAddMusic,
+  };
 }

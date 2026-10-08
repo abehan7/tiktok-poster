@@ -124,6 +124,20 @@ export interface PhotoPostInput {
   isAigc: boolean;
 }
 
+/** What was (or will be) posted, kept so a post can be opened later. */
+export interface PostContent {
+  title: string;
+  /** Caption / description. */
+  description: string;
+  /** Slide images: R2 https URLs once uploaded, media:// URLs before. */
+  images: string[];
+  coverIndex: number;
+  /** media:// URL of the video file. */
+  video: string | null;
+  privacyLevel: PrivacyLevel | null;
+  autoAddMusic: boolean;
+}
+
 export interface HistoryEntry {
   id: string;
   kind: "video" | "photo";
@@ -140,6 +154,12 @@ export interface HistoryEntry {
   scheduledAt: string | null;
   /** True while a schedule job (and its file copies) still exists, so "Post now" works. */
   hasJob?: boolean;
+  /** When the upload actually started (for "went out late" on scheduled posts). */
+  sentAt?: string | null;
+  /** Set by the user when they've finished/published a draft in TikTok (the API can't tell us). */
+  finishedAt?: string | null;
+  /** Missing on entries made before content was stored. */
+  content?: PostContent;
   failReason: string | null;
   postIds: string[];
   createdAt: string;
@@ -163,7 +183,7 @@ export interface Progress {
 /** A native context-menu item; `id` comes back from `contextMenu` when chosen. */
 export type MenuItem = { id: string; label: string; enabled?: boolean } | { separator: true };
 
-export type View = "carousel" | "video" | "history" | "settings";
+export type View = "carousel" | "video" | "calendar" | "history" | "settings";
 
 export interface TestResult {
   ok: boolean;
@@ -206,6 +226,8 @@ export interface PosterApi {
   listHistory(): Promise<HistoryEntry[]>;
   refreshStatus(entryId: string): Promise<HistoryEntry>;
   removeHistory(entryId: string): Promise<void>;
+  /** Marks a delivered draft as published in TikTok (or undoes it). */
+  setFinished(entryId: string, finished: boolean): Promise<HistoryEntry>;
   openExternal(url: string): Promise<void>;
 
   /** Path of a File from a drop event. */

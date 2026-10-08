@@ -16,7 +16,7 @@ const channels = [
   "listAccounts", "connect", "cancelConnect", "disconnect", "setAccountNote", "getCreatorInfo",
   "pickVideo", "pickImages", "pickCarouselFolder", "registerFiles",
   "postVideo", "postPhotos", "scheduleVideo", "schedulePhotos", "reschedule", "cancelScheduled", "postScheduledNow",
-  "listHistory", "refreshStatus", "removeHistory", "openExternal",
+  "listHistory", "refreshStatus", "removeHistory", "setFinished", "openExternal",
 ] as const;
 
 const api = {
