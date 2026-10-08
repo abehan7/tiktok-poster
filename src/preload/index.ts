@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { HistoryEntry, PosterApi, Progress } from "@shared/contract";
+import type { HistoryEntry, PosterApi, Progress, View } from "@shared/contract";
 
 type Result = { ok: true; value: unknown } | { ok: false; error: string };
 
@@ -12,7 +12,7 @@ const invoke =
   };
 
 const channels = [
-  "getSettings", "saveSettings", "testR2",
+  "getSettings", "saveSettings", "testR2", "chooseFolder", "getAccentColor", "contextMenu",
   "getAccount", "connect", "disconnect", "getCreatorInfo",
   "pickVideo", "pickImages", "pickCarouselFolder", "registerFiles",
   "postVideo", "postPhotos",
@@ -31,6 +31,16 @@ const api = {
     const h = (_: unknown, e: HistoryEntry) => listener(e);
     ipcRenderer.on("history", h);
     return () => void ipcRenderer.removeListener("history", h);
+  },
+  onAccentColor: (listener: (hex: string) => void) => {
+    const h = (_: unknown, hex: string) => listener(hex);
+    ipcRenderer.on("accent", h);
+    return () => void ipcRenderer.removeListener("accent", h);
+  },
+  onNavigate: (listener: (view: View) => void) => {
+    const h = (_: unknown, view: View) => listener(view);
+    ipcRenderer.on("navigate", h);
+    return () => void ipcRenderer.removeListener("navigate", h);
   },
 } as PosterApi;
 

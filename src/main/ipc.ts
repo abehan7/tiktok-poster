@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell, systemPreferences } from "electron";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 import type { CarouselFolder, PosterApi } from "@shared/contract";
@@ -9,7 +9,7 @@ import type { HistoryStore } from "./store/history";
 import type { SettingsStore } from "./store/settings";
 import type { TikTokSession } from "./tiktok/TikTokSession";
 
-type Handlers = Omit<PosterApi, "pathForFile" | "onProgress" | "onHistory">;
+type Handlers = Omit<PosterApi, "pathForFile" | "onProgress" | "onHistory" | "onAccentColor" | "onNavigate">;
 
 const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".webp"];
 const VIDEO_EXTS = [".mp4", ".mov", ".webm"];
@@ -32,6 +32,15 @@ function readCarouselFolder(dir: string): CarouselFolder {
   return { path: dir, images, caption: existsSync(captionPath) ? readFileSync(captionPath, "utf8").trim() : "" };
 }
 
+/** System accent colour; falls back to macOS blue. */
+export function accentHex(): string {
+  try {
+    return `#${systemPreferences.getAccentColor().slice(0, 6)}`;
+  } catch {
+    return "#007aff";
+  }
+}
+
 function assertPicked(paths: string[]) {
   for (const p of paths) if (!isAllowed(p)) throw new Error(`File wasn't picked in the app: ${p}`);
 }
@@ -39,8 +48,33 @@ function assertPicked(paths: string[]) {
 export function registerIpc(d: Deps): void {
   const handlers: Handlers = {
     getSettings: async () => d.settings.view(),
-    saveSettings: async (u) => d.settings.update(u),
+    saveSettings: async (u) => {
+      const view = d.settings.update(u);
+      nativeTheme.themeSource = view.appearance;
+      return view;
+    },
     testR2: async () => createImageHost(d.settings.get()).test(),
+    chooseFolder: async (defaultPath) => {
+      const r = await dialog.showOpenDialog(d.window()!, {
+        properties: ["openDirectory", "createDirectory"],
+        defaultPath: defaultPath && existsSync(defaultPath) ? defaultPath : undefined,
+      });
+      return r.canceled ? null : (r.filePaths[0] ?? null);
+    },
+    getAccentColor: async () => accentHex(),
+    contextMenu: (items) =>
+      new Promise((resolve) => {
+        let chosen: string | null = null;
+        const menu = Menu.buildFromTemplate(
+          items.map((item) =>
+            "separator" in item
+              ? { type: "separator" as const }
+              : { label: item.label, enabled: item.enabled ?? true, click: () => (chosen = item.id) },
+          ),
+        );
+        // `callback` fires after the click handler, so `chosen` is set by then.
+        menu.popup({ window: d.window() ?? undefined, callback: () => resolve(chosen) });
+      }),
 
     getAccount: () => d.session.getAccount(),
     connect: () => d.session.connect(),

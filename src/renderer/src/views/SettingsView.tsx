@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Check, Copy, ExternalLink } from "lucide-react";
-import type { SettingsUpdate, TestResult } from "@shared/contract";
-import { Button, Card, Field, Input, Notice, Toggle } from "@renderer/components/ui";
+import type { Appearance, SettingsUpdate, TestResult } from "@shared/contract";
+import { Button, Card, Field, Input, Notice, Segmented, Toggle } from "@renderer/components/ui";
 import { errorMessage, poster } from "@renderer/lib/api";
 import { useAppState } from "@renderer/lib/app-state";
 
@@ -171,8 +171,21 @@ export function SettingsView() {
         </Field>
       </Card>
 
+      <Card className="space-y-4">
+        <Header title="Appearance" subtitle="System follows macOS light/dark mode. Applies immediately." />
+        <Segmented<Appearance>
+          value={settings.appearance}
+          onChange={async (appearance) => setSettings(await poster.saveSettings({ appearance }))}
+          options={[
+            { value: "system", label: "System" },
+            { value: "light", label: "Light" },
+            { value: "dark", label: "Dark" },
+          ]}
+        />
+      </Card>
+
       {error && <Notice tone="bad">{error}</Notice>}
-      <div className="sticky bottom-0 flex items-center justify-end gap-3 bg-bg/90 py-3 backdrop-blur">
+      <div className="flex items-center justify-end gap-3 pb-2">
         {saved && <span className="text-xs text-ok">Saved</span>}
         <Button variant="primary" onClick={save}>
           Save settings

@@ -4,6 +4,8 @@
  * `ipcMain.handle` channel of the same name.
  */
 
+export type Appearance = "system" | "light" | "dark";
+
 export type PrivacyLevel =
   | "PUBLIC_TO_EVERYONE"
   | "MUTUAL_FOLLOW_FRIENDS"
@@ -37,6 +39,7 @@ export interface SettingsView {
   r2PublicBaseUrl: string;
   r2KeyPrefix: string;
   carouselFolder: string;
+  appearance: Appearance;
   /** True when no TikTok client key is set: everything runs against a fake TikTok. */
   mockMode: boolean;
 }
@@ -54,6 +57,7 @@ export interface SettingsUpdate {
   r2PublicBaseUrl?: string;
   r2KeyPrefix?: string;
   carouselFolder?: string;
+  appearance?: Appearance;
 }
 
 export interface Account {
@@ -138,6 +142,11 @@ export interface Progress {
   fraction: number | null;
 }
 
+/** A native context-menu item; `id` comes back from `contextMenu` when chosen. */
+export type MenuItem = { id: string; label: string; enabled?: boolean } | { separator: true };
+
+export type View = "carousel" | "video" | "history" | "settings";
+
 export interface TestResult {
   ok: boolean;
   message: string;
@@ -147,6 +156,10 @@ export interface PosterApi {
   getSettings(): Promise<SettingsView>;
   saveSettings(update: SettingsUpdate): Promise<SettingsView>;
   testR2(): Promise<TestResult>;
+  chooseFolder(defaultPath?: string): Promise<string | null>;
+  /** System accent colour as #rrggbb. */
+  getAccentColor(): Promise<string>;
+  contextMenu(items: MenuItem[]): Promise<string | null>;
 
   getAccount(): Promise<Account | null>;
   connect(): Promise<Account>;
@@ -171,4 +184,7 @@ export interface PosterApi {
   pathForFile(file: File): string;
   onProgress(listener: (progress: Progress) => void): () => void;
   onHistory(listener: (entry: HistoryEntry) => void): () => void;
+  onAccentColor(listener: (hex: string) => void): () => void;
+  /** App-menu navigation (e.g. Settings… ⌘,). */
+  onNavigate(listener: (view: View) => void): () => void;
 }

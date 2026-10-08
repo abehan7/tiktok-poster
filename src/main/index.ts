@@ -1,7 +1,8 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, Menu, nativeTheme, shell, systemPreferences, type MenuItemConstructorOptions } from "electron";
 import { join } from "node:path";
+import type { View } from "@shared/contract";
+import { accentHex, registerIpc } from "./ipc";
 import { handleMediaProtocol, registerMediaScheme } from "./media";
-import { registerIpc } from "./ipc";
 import { PostingService } from "./posting/PostingService";
 import { HistoryStore } from "./store/history";
 import { SettingsStore } from "./store/settings";
@@ -20,7 +21,8 @@ function createWindow() {
     minHeight: 640,
     title: "TikTok Poster",
     titleBarStyle: "hiddenInset",
-    backgroundColor: "#0b0b0d",
+    // Matches --bg so there's no flash before the first paint.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0b0b0d" : "#f6f6f7",
     show: false,
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
@@ -41,10 +43,59 @@ function createWindow() {
   else void win.loadFile(join(__dirname, "../renderer/index.html"));
 }
 
+function navigate(view: View) {
+  if (!win) createWindow();
+  win?.show();
+  win?.webContents.send("navigate", view);
+}
+
+function buildMenu() {
+  const isDev = Boolean(process.env.ELECTRON_RENDERER_URL);
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: app.name,
+      submenu: [
+        { role: "about" },
+        { type: "separator" },
+        { label: "Settings…", accelerator: "Cmd+,", click: () => navigate("settings") },
+        { type: "separator" },
+        { role: "services" },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    },
+    {
+      label: "File",
+      submenu: [
+        { label: "New Carousel", accelerator: "Cmd+1", click: () => navigate("carousel") },
+        { label: "New Video", accelerator: "Cmd+2", click: () => navigate("video") },
+        { label: "History", accelerator: "Cmd+3", click: () => navigate("history") },
+        { type: "separator" },
+        { role: "close" },
+      ],
+    },
+    { role: "editMenu" },
+    {
+      label: "View",
+      submenu: [
+        ...(isDev ? ([{ role: "reload" }, { role: "toggleDevTools" }, { type: "separator" }] as const) : []),
+        { role: "togglefullscreen" },
+      ],
+    },
+    { role: "windowMenu" },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 app.whenReady().then(() => {
   handleMediaProtocol();
 
   const settings = new SettingsStore();
+  nativeTheme.themeSource = settings.get().appearance;
   const history = new HistoryStore();
   const session = new TikTokSession(settings, new TokenStore());
   const posting = new PostingService(session, settings, history, {
@@ -54,7 +105,13 @@ app.whenReady().then(() => {
 
   registerIpc({ window: () => win, settings, session, history, posting });
   posting.resumePolling();
+  buildMenu();
   createWindow();
+
+  // Accent colour changes in System Settings → Appearance.
+  systemPreferences.subscribeNotification("AppleColorPreferencesChangedNotification", () =>
+    win?.webContents.send("accent", accentHex()),
+  );
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

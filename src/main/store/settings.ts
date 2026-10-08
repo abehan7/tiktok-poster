@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { SettingsUpdate, SettingsView } from "@shared/contract";
+import type { Appearance, SettingsUpdate, SettingsView } from "@shared/contract";
 import { JsonFile } from "./jsonFile";
 import { seal, unseal } from "./secrets";
 
@@ -16,6 +16,7 @@ interface StoredSettings {
   r2PublicBaseUrl: string;
   r2KeyPrefix: string;
   carouselFolder: string;
+  appearance: Appearance;
 }
 
 /** Plain settings with secrets decrypted — main process only. */
@@ -34,6 +35,7 @@ export interface Settings {
     keyPrefix: string;
   };
   carouselFolder: string;
+  appearance: Appearance;
   mockMode: boolean;
 }
 
@@ -49,6 +51,7 @@ const defaults = (): StoredSettings => ({
   r2PublicBaseUrl: "",
   r2KeyPrefix: "tiktok/",
   carouselFolder: join(homedir(), "Documents/Github/tubelingo-carousel/out"),
+  appearance: "system",
 });
 
 /** TikTok's desktop Login Kit only accepts loopback redirects with an explicit port. */
@@ -74,6 +77,7 @@ export class SettingsStore {
         keyPrefix: s.r2KeyPrefix,
       },
       carouselFolder: s.carouselFolder,
+      appearance: s.appearance,
       mockMode: !s.clientKey,
     };
   }
@@ -93,6 +97,7 @@ export class SettingsStore {
       r2PublicBaseUrl: s.r2PublicBaseUrl,
       r2KeyPrefix: s.r2KeyPrefix,
       carouselFolder: s.carouselFolder,
+      appearance: s.appearance,
       mockMode: !s.clientKey,
     };
   }
@@ -112,6 +117,7 @@ export class SettingsStore {
       r2PublicBaseUrl: trim(u.r2PublicBaseUrl, s.r2PublicBaseUrl),
       r2KeyPrefix: normalizePrefix(trim(u.r2KeyPrefix, s.r2KeyPrefix)),
       carouselFolder: trim(u.carouselFolder, s.carouselFolder),
+      appearance: u.appearance && ["system", "light", "dark"].includes(u.appearance) ? u.appearance : s.appearance,
     };
     this.file.write(next);
     return this.view();

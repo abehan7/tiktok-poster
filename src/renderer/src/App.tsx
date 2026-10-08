@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { Film, History, Images, LogOut, Settings, UserRound } from "lucide-react";
 import { Button } from "./components/ui";
@@ -28,6 +28,8 @@ export function App() {
 
 function Shell() {
   const [tab, setTab] = useState<Tab>("carousel");
+  // App menu: Settings… (⌘,), New Carousel (⌘1), New Video (⌘2), History (⌘3).
+  useEffect(() => poster.onNavigate(setTab), []);
   const { settings } = useAppState();
   const current = TABS.find((t) => t.id === tab)!;
 
