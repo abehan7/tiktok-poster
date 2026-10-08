@@ -13,7 +13,8 @@ import { toLocalFile } from "../media";
 import { createImageHost } from "../storage/ImageHost";
 import type { HistoryStore } from "../store/history";
 import type { SettingsStore } from "../store/settings";
-import type { FileUploadSource } from "../tiktok/TikTokGateway";
+import { describeTikTokError } from "@shared/tiktokErrors";
+import { TikTokError, type FileUploadSource } from "../tiktok/TikTokGateway";
 import type { TikTokSession } from "../tiktok/TikTokSession";
 
 const MB = 1024 * 1024;
@@ -51,15 +52,32 @@ export class PostingService {
     }
   }
 
-  async postVideo(input: VideoPostInput): Promise<HistoryEntry> {
+  /** Checks a video post without sending anything; returns its MIME type and size. */
+  async validateVideo(input: VideoPostInput): Promise<{ type: string; size: number }> {
     const type = VIDEO_TYPES[extname(input.filePath).toLowerCase()];
     if (!type) throw new Error("Video must be .mp4, .mov or .webm.");
     const { size } = await stat(input.filePath);
     if (size > 4 * 1024 * MB) throw new Error("TikTok accepts videos up to 4 GB.");
     if (input.mode === "DIRECT" && input.title.length > 2200) throw new Error("Caption is over 2200 characters.");
+    this.requireAccount(input.openId);
+    return { type, size };
+  }
+
+  validatePhotos(input: PhotoPostInput): void {
+    const n = input.filePaths.length;
+    if (n < 1 || n > 35) throw new Error("A photo post needs 1 to 35 images.");
+    if (input.title.length > 90) throw new Error("Title is over 90 characters.");
+    if (input.description.length > 4000) throw new Error("Description is over 4000 characters.");
+    if (input.coverIndex < 0 || input.coverIndex >= n) throw new Error("Pick a cover image.");
+    this.requireAccount(input.openId);
+  }
+
+  /** Posts now. With `entryId`, reuses that (scheduled) history entry instead of adding one. */
+  async postVideo(input: VideoPostInput, entryId?: string): Promise<HistoryEntry> {
+    const { type, size } = await this.validateVideo(input);
 
     const file = toLocalFile(input.filePath);
-    const entry = this.start(input.openId, {
+    const entry = this.start(input.openId, entryId, {
       kind: "video",
       mode: input.mode,
       label: input.mode === "DIRECT" && input.title ? input.title : file.name,
@@ -108,15 +126,12 @@ export class PostingService {
     });
   }
 
-  async postPhotos(input: PhotoPostInput): Promise<HistoryEntry> {
+  async postPhotos(input: PhotoPostInput, entryId?: string): Promise<HistoryEntry> {
+    this.validatePhotos(input);
     const n = input.filePaths.length;
-    if (n < 1 || n > 35) throw new Error("A photo post needs 1 to 35 images.");
-    if (input.title.length > 90) throw new Error("Title is over 90 characters.");
-    if (input.description.length > 4000) throw new Error("Description is over 4000 characters.");
-    if (input.coverIndex < 0 || input.coverIndex >= n) throw new Error("Pick a cover image.");
 
     const first = toLocalFile(input.filePaths[0]);
-    const entry = this.start(input.openId, {
+    const entry = this.start(input.openId, entryId, {
       kind: "photo",
       mode: input.mode,
       label: input.title || input.description.split("\n")[0] || `${n} photos`,
@@ -165,9 +180,19 @@ export class PostingService {
     return this.update(entryId, { status: s.status, failReason: s.failReason, postIds: s.postIds });
   }
 
-  private start(openId: string, fields: Pick<HistoryEntry, "kind" | "mode" | "label" | "thumbUrl">): HistoryEntry {
+  private requireAccount(openId: string) {
     const account = this.session.storedAccount(openId);
     if (!account) throw new Error("That TikTok account isn't connected. Connect it again.");
+    return account;
+  }
+
+  /** Adds a history entry (status UPLOADING, or SCHEDULED when `scheduledAt` is given). */
+  createEntry(
+    openId: string,
+    fields: Pick<HistoryEntry, "kind" | "mode" | "label" | "thumbUrl">,
+    scheduledAt: string | null = null,
+  ): HistoryEntry {
+    const account = this.requireAccount(openId);
     const now = new Date().toISOString();
     const entry: HistoryEntry = {
       id: randomUUID(),
@@ -175,7 +200,8 @@ export class PostingService {
       openId,
       accountName: account.username ? `@${account.username}` : account.displayName,
       publishId: null,
-      status: "UPLOADING",
+      status: scheduledAt ? "SCHEDULED" : "UPLOADING",
+      scheduledAt,
       failReason: null,
       postIds: [],
       createdAt: now,
@@ -186,6 +212,15 @@ export class PostingService {
     return entry;
   }
 
+  private start(
+    openId: string,
+    entryId: string | undefined,
+    fields: Pick<HistoryEntry, "kind" | "mode" | "label" | "thumbUrl">,
+  ): HistoryEntry {
+    if (!entryId) return this.createEntry(openId, fields);
+    return this.update(entryId, { status: "UPLOADING", failReason: null });
+  }
+
   /** Runs the pre-publish work; a failure marks the entry FAILED and rethrows to the form. */
   private async run(entryId: string, work: () => Promise<HistoryEntry>): Promise<HistoryEntry> {
     try {
@@ -193,9 +228,14 @@ export class PostingService {
       this.poll(entryId);
       return entry;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message =
+        err instanceof TikTokError
+          ? describeTikTokError(err.code, err.message)
+          : err instanceof Error
+            ? err.message
+            : String(err);
       this.update(entryId, { status: "FAILED", failReason: message });
-      throw err;
+      throw new Error(message);
     } finally {
       this.events.progress({ entryId, stage: "", fraction: null });
     }
@@ -224,7 +264,7 @@ export class PostingService {
     setTimeout(tick, POLL_EVERY_MS);
   }
 
-  private update(entryId: string, patch: Partial<HistoryEntry>): HistoryEntry {
+  update(entryId: string, patch: Partial<HistoryEntry>): HistoryEntry {
     const e = this.history.update(entryId, patch);
     this.events.history(e);
     return e;

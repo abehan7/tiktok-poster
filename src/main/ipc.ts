@@ -4,6 +4,7 @@ import { extname, join } from "node:path";
 import type { CarouselFolder, PosterApi } from "@shared/contract";
 import { isAllowed, toLocalFile } from "./media";
 import type { PostingService } from "./posting/PostingService";
+import type { Scheduler } from "./posting/Scheduler";
 import { createImageHost } from "./storage/ImageHost";
 import { cancelAuthorization } from "./tiktok/oauth";
 import type { HistoryStore } from "./store/history";
@@ -21,6 +22,7 @@ interface Deps {
   session: TikTokSession;
   history: HistoryStore;
   posting: PostingService;
+  scheduler: Scheduler;
 }
 
 function readCarouselFolder(dir: string): CarouselFolder {
@@ -124,7 +126,27 @@ export function registerIpc(d: Deps): void {
       return d.posting.postPhotos(input);
     },
 
-    listHistory: async () => d.history.list(),
+    scheduleVideo: async (input, at) => {
+      assertPicked([input.filePath]);
+      return d.scheduler.scheduleVideo(input, at);
+    },
+    schedulePhotos: async (input, at) => {
+      assertPicked(input.filePaths);
+      return d.scheduler.schedulePhotos(input, at);
+    },
+    reschedule: async (id, at) => d.scheduler.reschedule(id, at),
+    cancelScheduled: (id) => d.scheduler.cancel(id),
+    postScheduledNow: (id) => d.scheduler.postNow(id),
+
+    listHistory: async () => {
+      // media:// only serves files registered this launch; re-allow thumbnails that still exist.
+      const entries = d.history.list();
+      for (const e of entries) {
+        const p = e.thumbUrl && new URL(e.thumbUrl).searchParams.get("p");
+        if (p && existsSync(p)) toLocalFile(p);
+      }
+      return d.scheduler.decorate(entries);
+    },
     refreshStatus: (id) => d.posting.refresh(id),
     removeHistory: async (id) => d.history.remove(id),
     openExternal: async (url) => {

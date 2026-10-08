@@ -122,7 +122,7 @@ export function PostModePicker({
           </Field>
           {!settings?.mockMode && (
             <Notice tone="warn">
-              Until TikTok audits your app, direct posts are forced to private (Only me) no matter what you pick.
+              Until TikTok audits this app, Direct Post only works when the TikTok account itself is set to Private. For a public account, use Draft to inbox.
             </Notice>
           )}
         </>

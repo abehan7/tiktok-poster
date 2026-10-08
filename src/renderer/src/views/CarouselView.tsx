@@ -7,6 +7,7 @@ import { NotConnected, PostModePicker, type ModeState } from "@renderer/componen
 import { Button, Card, Field, Input, Notice, ProgressBar, Textarea, Toggle } from "@renderer/components/ui";
 import { errorMessage, poster } from "@renderer/lib/api";
 import { useAppState } from "@renderer/lib/app-state";
+import { formatWhen, SchedulePicker, scheduleOk } from "@renderer/components/SchedulePicker";
 import { useProgress } from "@renderer/lib/use-progress";
 
 const MAX_IMAGES = 35;
@@ -23,13 +24,14 @@ export function CarouselView({ onPosted }: { onPosted(): void }) {
   const [autoMusic, setAutoMusic] = useState(true);
   const [allowComment, setAllowComment] = useState(true);
   const [isAigc, setIsAigc] = useState(false);
+  const [when, setWhen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const progress = useProgress(busy);
   const onModeChange = useCallback((v: ModeState) => setMode(v), []);
 
   const direct = mode.mode === "DIRECT";
-  const ready = Boolean(
+  const ready = Boolean(scheduleOk(when) && 
     account &&
       images.length > 0 &&
       images.length <= MAX_IMAGES &&
@@ -69,7 +71,7 @@ export function CarouselView({ onPosted }: { onPosted(): void }) {
     setBusy(true);
     setError(null);
     try {
-      await poster.postPhotos({
+      const input = {
         openId: account!.openId,
         filePaths: images.map((i) => i.path),
         mode: mode.mode,
@@ -80,11 +82,14 @@ export function CarouselView({ onPosted }: { onPosted(): void }) {
         disableComment: !allowComment,
         autoAddMusic: autoMusic,
         isAigc,
-      });
+      };
+      if (when) await poster.schedulePhotos(input, new Date(when).toISOString());
+      else await poster.postPhotos(input);
       setImages([]);
       setTitle("");
       setDescription("");
       setSource(null);
+      setWhen(null);
       onPosted();
     } catch (err) {
       setError(errorMessage(err));
@@ -168,6 +173,7 @@ export function CarouselView({ onPosted }: { onPosted(): void }) {
       <Card className="space-y-5">
         {!account && <NotConnected />}
         <PostModePicker value={mode} onChange={onModeChange} />
+        <SchedulePicker value={when} onChange={setWhen} />
 
         <Field label="Title" counter={{ value: title.length, max: 90 }} hint="Shown in bold above the description.">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Optional" />
@@ -191,7 +197,13 @@ export function CarouselView({ onPosted }: { onPosted(): void }) {
 
         <div className="flex justify-end">
           <Button variant="primary" size="lg" disabled={!ready || busy} onClick={submit}>
-            <Send size={16} /> {busy ? "Uploading…" : direct ? "Post to TikTok" : "Send to TikTok inbox"}
+            <Send size={16} /> {busy
+              ? when ? "Scheduling…" : "Uploading…"
+              : when
+                ? `Schedule · ${formatWhen(new Date(when).toISOString())}`
+                : direct
+                  ? "Post to TikTok"
+                  : "Send to TikTok inbox"}
           </Button>
         </div>
       </Card>

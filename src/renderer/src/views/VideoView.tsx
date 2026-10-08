@@ -6,6 +6,7 @@ import { NotConnected, PostModePicker, type ModeState } from "@renderer/componen
 import { Button, Card, Field, Notice, ProgressBar, Textarea, Toggle } from "@renderer/components/ui";
 import { errorMessage, formatBytes, poster } from "@renderer/lib/api";
 import { useAppState } from "@renderer/lib/app-state";
+import { formatWhen, SchedulePicker, scheduleOk } from "@renderer/components/SchedulePicker";
 import { useProgress } from "@renderer/lib/use-progress";
 
 export function VideoView({ onPosted }: { onPosted(): void }) {
@@ -20,6 +21,7 @@ export function VideoView({ onPosted }: { onPosted(): void }) {
   const [allowDuet, setAllowDuet] = useState(true);
   const [allowStitch, setAllowStitch] = useState(true);
   const [isAigc, setIsAigc] = useState(false);
+  const [when, setWhen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -28,14 +30,14 @@ export function VideoView({ onPosted }: { onPosted(): void }) {
 
   const direct = mode.mode === "DIRECT";
   const tooLong = Boolean(direct && creator && duration && duration > creator.maxVideoPostDurationSec);
-  const ready = Boolean(account && file && (!direct || mode.privacyLevel) && title.length <= 2200 && !tooLong);
+  const ready = Boolean(scheduleOk(when) && account && file && (!direct || mode.privacyLevel) && title.length <= 2200 && !tooLong);
 
   async function submit() {
     if (!file || !ready) return;
     setBusy(true);
     setError(null);
     try {
-      await poster.postVideo({
+      const input = {
         openId: account!.openId,
         filePath: file.path,
         mode: mode.mode,
@@ -46,9 +48,12 @@ export function VideoView({ onPosted }: { onPosted(): void }) {
         disableStitch: !allowStitch,
         coverTimestampMs: coverMs,
         isAigc,
-      });
+      };
+      if (when) await poster.scheduleVideo(input, new Date(when).toISOString());
+      else await poster.postVideo(input);
       setFile(null);
       setTitle("");
+      setWhen(null);
       onPosted();
     } catch (err) {
       setError(errorMessage(err));
@@ -134,6 +139,7 @@ export function VideoView({ onPosted }: { onPosted(): void }) {
       <Card className="space-y-5">
         {!account && <NotConnected />}
         <PostModePicker value={mode} onChange={onModeChange} onCreatorInfo={setCreator} />
+        <SchedulePicker value={when} onChange={setWhen} />
 
         {direct && (
           <>
@@ -169,7 +175,13 @@ export function VideoView({ onPosted }: { onPosted(): void }) {
 
         <div className="flex justify-end">
           <Button variant="primary" size="lg" disabled={!ready || busy} onClick={submit}>
-            <Send size={16} /> {busy ? "Uploading…" : direct ? "Post to TikTok" : "Send to TikTok inbox"}
+            <Send size={16} /> {busy
+              ? when ? "Scheduling…" : "Uploading…"
+              : when
+                ? `Schedule · ${formatWhen(new Date(when).toISOString())}`
+                : direct
+                  ? "Post to TikTok"
+                  : "Send to TikTok inbox"}
           </Button>
         </div>
       </Card>

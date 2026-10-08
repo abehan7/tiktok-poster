@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { Film, History, Images, Settings } from "lucide-react";
+import logo from "./assets/logo.png";
 import { AccountMenu } from "./components/AccountMenu";
 import { poster } from "./lib/api";
 import { AppStateProvider, useAppState } from "./lib/app-state";
@@ -37,7 +38,7 @@ function Shell() {
     <div className="flex h-full">
       <aside className="drag flex w-52 shrink-0 flex-col border-r border-line bg-panel px-3 pb-4 pt-12">
         <div className="mb-6 flex items-center gap-2 px-2">
-          <span className="grid size-7 place-items-center rounded-lg bg-text text-sm font-black text-bg">T</span>
+          <img src={logo} alt="" className="size-8 rounded-[8px]" draggable={false} />
           <span className="font-semibold">TikTok Poster</span>
         </div>
         <nav className="no-drag space-y-0.5">

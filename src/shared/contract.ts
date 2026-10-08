@@ -16,6 +16,8 @@ export type PrivacyLevel =
 export type PostMode = "DIRECT" | "DRAFT";
 
 export type PostStatus =
+  | "SCHEDULED"
+  | "CANCELLED"
   | "UPLOADING"
   | "PROCESSING_UPLOAD"
   | "PROCESSING_DOWNLOAD"
@@ -23,7 +25,7 @@ export type PostStatus =
   | "PUBLISH_COMPLETE"
   | "FAILED";
 
-export const TERMINAL_STATUSES: PostStatus[] = ["SEND_TO_USER_INBOX", "PUBLISH_COMPLETE", "FAILED"];
+export const TERMINAL_STATUSES: PostStatus[] = ["SEND_TO_USER_INBOX", "PUBLISH_COMPLETE", "FAILED", "CANCELLED"];
 
 /** What the renderer sees of settings. Secrets are never sent back, only whether they are set. */
 export interface SettingsView {
@@ -134,6 +136,10 @@ export interface HistoryEntry {
   thumbUrl: string | null;
   publishId: string | null;
   status: PostStatus;
+  /** ISO time a scheduled post goes out (null for immediate posts). */
+  scheduledAt: string | null;
+  /** True while a schedule job (and its file copies) still exists, so "Post now" works. */
+  hasJob?: boolean;
   failReason: string | null;
   postIds: string[];
   createdAt: string;
@@ -190,6 +196,12 @@ export interface PosterApi {
 
   postVideo(input: VideoPostInput): Promise<HistoryEntry>;
   postPhotos(input: PhotoPostInput): Promise<HistoryEntry>;
+  /** Validates now, copies the files, and posts at `at` (ISO) while the app is running. */
+  scheduleVideo(input: VideoPostInput, at: string): Promise<HistoryEntry>;
+  schedulePhotos(input: PhotoPostInput, at: string): Promise<HistoryEntry>;
+  reschedule(entryId: string, at: string): Promise<HistoryEntry>;
+  cancelScheduled(entryId: string): Promise<HistoryEntry>;
+  postScheduledNow(entryId: string): Promise<void>;
 
   listHistory(): Promise<HistoryEntry[]>;
   refreshStatus(entryId: string): Promise<HistoryEntry>;

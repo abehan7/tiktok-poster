@@ -1,9 +1,10 @@
-import { app, BrowserWindow, Menu, nativeTheme, shell, systemPreferences, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, dialog, Menu, nativeTheme, shell, systemPreferences, type MenuItemConstructorOptions } from "electron";
 import { join } from "node:path";
 import type { View } from "@shared/contract";
 import { accentHex, registerIpc } from "./ipc";
 import { handleMediaProtocol, registerMediaScheme } from "./media";
 import { PostingService } from "./posting/PostingService";
+import { Scheduler } from "./posting/Scheduler";
 import { HistoryStore } from "./store/history";
 import { SettingsStore } from "./store/settings";
 import { TokenStore } from "./store/tokens";
@@ -92,19 +93,44 @@ function buildMenu() {
 }
 
 app.whenReady().then(() => {
+  // Packaged builds get the .icns from electron-builder; in dev, set the Dock icon by hand.
+  if (!app.isPackaged) app.dock?.setIcon(join(__dirname, "../../build/icon.png"));
   handleMediaProtocol();
 
   const settings = new SettingsStore();
   nativeTheme.themeSource = settings.get().appearance;
   const history = new HistoryStore();
   const session = new TikTokSession(settings, new TokenStore());
+  // `scheduler` is assigned right below; events only fire after that.
+  let scheduler: Scheduler;
   const posting = new PostingService(session, settings, history, {
     progress: (p) => win?.webContents.send("progress", p),
-    history: (e) => win?.webContents.send("history", e),
+    history: (e) => win?.webContents.send("history", scheduler.decorate([e])[0]),
   });
+  scheduler = new Scheduler(posting, history);
 
-  registerIpc({ window: () => win, settings, session, history, posting });
+  registerIpc({ window: () => win, settings, session, history, posting, scheduler });
   posting.resumePolling();
+  scheduler.start();
+
+  // Scheduled posts only go out while the app runs, so ask before quitting with any pending.
+  let quitConfirmed = false;
+  app.on("before-quit", (e) => {
+    if (quitConfirmed) return;
+    const ok = scheduler.confirmQuit(
+      (n) =>
+        dialog.showMessageBoxSync({
+          type: "warning",
+          message: `${n} scheduled post${n === 1 ? "" : "s"} won't go out while TikTok Poster is closed.`,
+          detail: "Closing the window is fine. Quitting stops the schedule until you open the app again.",
+          buttons: ["Quit Anyway", "Keep Running"],
+          defaultId: 1,
+          cancelId: 1,
+        }) === 0,
+    );
+    if (ok) quitConfirmed = true;
+    else e.preventDefault();
+  });
   buildMenu();
   createWindow();
 

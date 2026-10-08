@@ -15,7 +15,7 @@ const channels = [
   "getSettings", "saveSettings", "testR2", "chooseFolder", "getAccentColor", "contextMenu",
   "listAccounts", "connect", "cancelConnect", "disconnect", "setAccountNote", "getCreatorInfo",
   "pickVideo", "pickImages", "pickCarouselFolder", "registerFiles",
-  "postVideo", "postPhotos",
+  "postVideo", "postPhotos", "scheduleVideo", "schedulePhotos", "reschedule", "cancelScheduled", "postScheduledNow",
   "listHistory", "refreshStatus", "removeHistory", "openExternal",
 ] as const;
 
