@@ -1,0 +1,9 @@
+appId: dev.hanjungyu.tiktokposter
+productName: TikTok Poster
+directories:
+  output: dist
+files:
+  - out/**
+mac:
+  category: public.app-category.social-networking
+  target: dir
