@@ -70,6 +70,7 @@ export function CarouselView({ onPosted }: { onPosted(): void }) {
     setError(null);
     try {
       await poster.postPhotos({
+        openId: account!.openId,
         filePaths: images.map((i) => i.path),
         mode: mode.mode,
         title,

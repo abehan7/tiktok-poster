@@ -84,6 +84,12 @@ export function HistoryView() {
                 <span>{e.kind === "video" ? "Video" : "Carousel"}</span>
                 <span>·</span>
                 <span>{e.mode === "DIRECT" ? "Direct post" : "Draft"}</span>
+                {e.accountName && (
+                  <>
+                    <span>·</span>
+                    <span className="font-medium text-text">{e.accountName}</span>
+                  </>
+                )}
                 <span>·</span>
                 <span>{timeAgo(e.createdAt)}</span>
               </div>

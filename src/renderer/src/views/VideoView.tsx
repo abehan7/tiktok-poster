@@ -36,6 +36,7 @@ export function VideoView({ onPosted }: { onPosted(): void }) {
     setError(null);
     try {
       await poster.postVideo({
+        openId: account!.openId,
         filePath: file.path,
         mode: mode.mode,
         title,

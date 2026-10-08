@@ -59,7 +59,7 @@ export class PostingService {
     if (input.mode === "DIRECT" && input.title.length > 2200) throw new Error("Caption is over 2200 characters.");
 
     const file = toLocalFile(input.filePath);
-    const entry = this.start({
+    const entry = this.start(input.openId, {
       kind: "video",
       mode: input.mode,
       label: input.mode === "DIRECT" && input.title ? input.title : file.name,
@@ -68,7 +68,7 @@ export class PostingService {
 
     return this.run(entry.id, async () => {
       const gw = this.session.gateway();
-      const token = await this.session.accessToken();
+      const token = await this.session.accessToken(input.openId);
       const source = chunkPlan(size);
 
       this.progress(entry.id, "Starting upload", 0);
@@ -116,7 +116,7 @@ export class PostingService {
     if (input.coverIndex < 0 || input.coverIndex >= n) throw new Error("Pick a cover image.");
 
     const first = toLocalFile(input.filePaths[0]);
-    const entry = this.start({
+    const entry = this.start(input.openId, {
       kind: "photo",
       mode: input.mode,
       label: input.title || input.description.split("\n")[0] || `${n} photos`,
@@ -135,7 +135,7 @@ export class PostingService {
 
       this.progress(entry.id, "Asking TikTok to pull the images", 1);
       const direct = input.mode === "DIRECT";
-      const { publishId } = await this.session.gateway().initPhoto(await this.session.accessToken(), {
+      const { publishId } = await this.session.gateway().initPhoto(await this.session.accessToken(input.openId), {
         media_type: "PHOTO",
         post_mode: direct ? "DIRECT_POST" : "MEDIA_UPLOAD",
         post_info: direct
@@ -158,15 +158,22 @@ export class PostingService {
     const e = this.history.get(entryId);
     if (!e) throw new Error("That post is no longer in the history.");
     if (!e.publishId) return e;
-    const s = await this.session.gateway().fetchStatus(await this.session.accessToken(), e.publishId);
+    // Posts from before multi-account support have no openId; try the oldest connected account.
+    const openId = e.openId ?? (await this.session.listAccounts())[0]?.openId;
+    if (!openId) throw new Error("Connect the TikTok account this was posted from.");
+    const s = await this.session.gateway().fetchStatus(await this.session.accessToken(openId), e.publishId);
     return this.update(entryId, { status: s.status, failReason: s.failReason, postIds: s.postIds });
   }
 
-  private start(fields: Pick<HistoryEntry, "kind" | "mode" | "label" | "thumbUrl">): HistoryEntry {
+  private start(openId: string, fields: Pick<HistoryEntry, "kind" | "mode" | "label" | "thumbUrl">): HistoryEntry {
+    const account = this.session.storedAccount(openId);
+    if (!account) throw new Error("That TikTok account isn't connected. Connect it again.");
     const now = new Date().toISOString();
     const entry: HistoryEntry = {
       id: randomUUID(),
       ...fields,
+      openId,
+      accountName: account.username ? `@${account.username}` : account.displayName,
       publishId: null,
       status: "UPLOADING",
       failReason: null,

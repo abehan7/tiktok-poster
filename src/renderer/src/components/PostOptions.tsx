@@ -29,20 +29,25 @@ export function PostModePicker({
   onChange(v: ModeState): void;
   onCreatorInfo?(info: CreatorInfo | null): void;
 }) {
-  const { canDirectPost, settings } = useAppState();
+  const { canDirectPost, settings, accounts, account, selectAccount } = useAppState();
   const [creator, setCreator] = useState<CreatorInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const openId = account?.openId;
 
   useEffect(() => {
     if (!canDirectPost && value.mode === "DIRECT") onChange({ mode: "DRAFT", privacyLevel: "" });
   }, [canDirectPost, value.mode, onChange]);
 
+  // Privacy options are per account: re-fetch and re-pick when the account changes.
   useEffect(() => {
-    if (value.mode !== "DIRECT") return;
+    setCreator(null);
+    onCreatorInfo?.(null);
+    if (value.mode !== "DIRECT" || !openId) return;
+    onChange({ ...value, privacyLevel: "" });
     let live = true;
     setError(null);
     poster
-      .getCreatorInfo()
+      .getCreatorInfo(openId)
       .then((info) => {
         if (!live) return;
         setCreator(info);
@@ -53,10 +58,29 @@ export function PostModePicker({
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value.mode]);
+  }, [value.mode, openId]);
 
   return (
     <div className="space-y-4">
+      {account && (
+        <Field
+          label="Post as"
+          hint={account.note ? `Logs in with ${account.note}` : "Set this account's login email / ID in Settings"}
+        >
+          <select
+            value={account.openId}
+            onChange={(e) => selectAccount(e.target.value)}
+            className="h-9 w-full rounded-lg border border-line bg-sunken px-3 text-sm outline-none focus:border-cyan"
+          >
+            {accounts.map((a) => (
+              <option key={a.openId} value={a.openId}>
+                {a.displayName}
+                {a.username ? ` (@${a.username})` : ""}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
       <div className="flex items-center justify-between gap-4">
         <Segmented
           value={value.mode}
@@ -66,9 +90,6 @@ export function PostModePicker({
             { value: "DIRECT", label: "Direct post", disabled: !canDirectPost },
           ]}
         />
-        {creator && value.mode === "DIRECT" && (
-          <span className="truncate text-xs text-muted">as @{creator.username}</span>
-        )}
       </div>
 
       {value.mode === "DRAFT" ? (

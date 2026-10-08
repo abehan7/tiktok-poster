@@ -63,8 +63,13 @@ export interface SettingsUpdate {
 export interface Account {
   openId: string;
   displayName: string;
+  /** TikTok @handle (from creator_info; null if Direct Post isn't granted). */
+  username: string | null;
   avatarUrl: string | null;
+  /** Free-text reminder, e.g. which email/Google login this account uses. TikTok never exposes emails. */
+  note: string;
   scopes: string[];
+  connectedAt: string;
 }
 
 export interface CreatorInfo {
@@ -87,6 +92,8 @@ export interface LocalFile {
 }
 
 export interface VideoPostInput {
+  /** Account to post as. */
+  openId: string;
   filePath: string;
   mode: PostMode;
   /** Caption (≤ 2200 chars). Used for DIRECT only — drafts are captioned in the TikTok app. */
@@ -100,6 +107,8 @@ export interface VideoPostInput {
 }
 
 export interface PhotoPostInput {
+  /** Account to post as. */
+  openId: string;
   filePaths: string[];
   mode: PostMode;
   /** ≤ 90 chars. */
@@ -118,6 +127,9 @@ export interface HistoryEntry {
   kind: "video" | "photo";
   mode: PostMode;
   label: string;
+  /** Account it was posted as (null for posts made before multi-account support). */
+  openId: string | null;
+  accountName: string | null;
   /** media:// URL of the first image or the video, for the thumbnail. */
   thumbUrl: string | null;
   publishId: string | null;
@@ -161,12 +173,14 @@ export interface PosterApi {
   getAccentColor(): Promise<string>;
   contextMenu(items: MenuItem[]): Promise<string | null>;
 
-  getAccount(): Promise<Account | null>;
+  listAccounts(): Promise<Account[]>;
+  /** Browser login; adds whichever TikTok account signs in (or refreshes it if already connected). */
   connect(): Promise<Account>;
   /** Abandons a login that is still waiting for the browser. */
   cancelConnect(): Promise<void>;
-  disconnect(): Promise<void>;
-  getCreatorInfo(): Promise<CreatorInfo>;
+  disconnect(openId: string): Promise<void>;
+  setAccountNote(openId: string, note: string): Promise<Account[]>;
+  getCreatorInfo(openId: string): Promise<CreatorInfo>;
 
   pickVideo(): Promise<LocalFile | null>;
   pickImages(): Promise<LocalFile[]>;

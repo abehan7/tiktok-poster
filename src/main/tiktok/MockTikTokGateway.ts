@@ -10,6 +10,8 @@ import type {
   VideoPostInfo,
 } from "./TikTokGateway";
 
+const accountOf = (token: string) => Number(/^mock-(?:at|rt)-(\d+)-/.exec(token)?.[1] ?? 0);
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface MockPublish {
@@ -24,34 +26,45 @@ interface MockPublish {
  */
 export class MockTikTokGateway implements TikTokGateway {
   private readonly publishes = new Map<string, MockPublish>();
+  private logins = 0;
+  private static readonly NAMES = ["TubeLingo (mock)", "TubeLingo KR (mock)", "Study Clips (mock)"];
 
   async authorize(scopes: string[]): Promise<TokenGrant> {
     await sleep(600);
-    return {
-      accessToken: `mock-at-${randomBytes(6).toString("hex")}`,
-      refreshToken: `mock-rt-${randomBytes(6).toString("hex")}`,
-      expiresIn: 86_400,
-      refreshExpiresIn: 31_536_000,
-      openId: "mock-open-id",
-      scopes,
-    };
+    // Each browser login "signs in" the next mock account.
+    return this.grant(this.logins++ % MockTikTokGateway.NAMES.length, scopes);
   }
 
-  refresh(): Promise<TokenGrant> {
-    return this.authorize(["user.info.basic", "video.upload", "video.publish"]);
+  async refresh(refreshToken: string): Promise<TokenGrant> {
+    return this.grant(accountOf(refreshToken), ["user.info.basic", "video.upload", "video.publish"]);
+  }
+
+  private grant(n: number, scopes: string[]): TokenGrant {
+    // The account number lives in the token so it survives app restarts.
+    const accessToken = `mock-at-${n}-${randomBytes(6).toString("hex")}`;
+    const refreshToken = `mock-rt-${n}-${randomBytes(6).toString("hex")}`;
+    return { accessToken, refreshToken, expiresIn: 86_400, refreshExpiresIn: 31_536_000, openId: `mock-open-id-${n}`, scopes };
+  }
+
+  private who(accessToken: string) {
+    const n = accountOf(accessToken);
+    const name = MockTikTokGateway.NAMES[n] ?? `Mock ${n}`;
+    return { n, name, username: name.toLowerCase().replace(/[^a-z]+/g, ".").replace(/^\.|\.$/g, "") };
   }
 
   async revoke(): Promise<void> {}
 
-  async userInfo(): Promise<UserInfo> {
-    return { openId: "mock-open-id", displayName: "TubeLingo (mock)", avatarUrl: null };
+  async userInfo(accessToken: string): Promise<UserInfo> {
+    const w = this.who(accessToken);
+    return { openId: `mock-open-id-${w.n}`, displayName: w.name, avatarUrl: null };
   }
 
-  async creatorInfo(): Promise<CreatorInfo> {
+  async creatorInfo(accessToken: string): Promise<CreatorInfo> {
     await sleep(200);
+    const w = this.who(accessToken);
     return {
-      username: "tubelingo.mock",
-      nickname: "TubeLingo (mock)",
+      username: w.username,
+      nickname: w.name,
       avatarUrl: null,
       privacyLevelOptions: ["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "SELF_ONLY"],
       commentDisabled: false,

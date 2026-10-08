@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { Film, History, Images, LogOut, Settings, UserRound } from "lucide-react";
-import { Button } from "./components/ui";
-import { errorMessage, poster } from "./lib/api";
+import { Film, History, Images, Settings } from "lucide-react";
+import { AccountMenu } from "./components/AccountMenu";
+import { poster } from "./lib/api";
 import { AppStateProvider, useAppState } from "./lib/app-state";
 import { CarouselView } from "./views/CarouselView";
 import { HistoryView } from "./views/HistoryView";
@@ -68,7 +68,7 @@ function Shell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="drag flex h-14 shrink-0 items-center justify-between border-b border-line px-6">
           <h1 className="text-[15px] font-semibold">{current.title}</h1>
-          <AccountButton />
+          <AccountMenu onManage={() => setTab("settings")} />
         </header>
         <main className="flex-1 overflow-y-auto p-6">
           {tab === "video" && <VideoView onPosted={() => setTab("history")} />}
@@ -77,75 +77,6 @@ function Shell() {
           {tab === "settings" && <SettingsView />}
         </main>
       </div>
-    </div>
-  );
-}
-
-function AccountButton() {
-  const { account, accountError, setAccount, loading } = useAppState();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function connect() {
-    setBusy(true);
-    setError(null);
-    try {
-      setAccount(await poster.connect());
-    } catch (err) {
-      const message = errorMessage(err);
-      setError(message === "Login cancelled." ? null : message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (loading) return null;
-
-  if (!account) {
-    return (
-      <div className="no-drag flex items-center gap-3">
-        {(error ?? accountError) && (
-          <span className="selectable max-w-80 truncate text-xs text-bad" title={error ?? accountError ?? ""}>
-            {error ?? accountError}
-          </span>
-        )}
-        {busy ? (
-          <>
-            <span className="text-xs text-muted">Waiting for browser…</span>
-            <Button size="sm" onClick={() => void poster.cancelConnect()}>
-              Cancel
-            </Button>
-          </>
-        ) : (
-          <Button variant="primary" size="sm" onClick={connect}>
-            Connect TikTok
-          </Button>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="no-drag flex items-center gap-2">
-      {account.avatarUrl ? (
-        <img src={account.avatarUrl} alt="" className="size-7 rounded-full" />
-      ) : (
-        <span className="grid size-7 place-items-center rounded-full bg-sunken text-muted">
-          <UserRound size={15} />
-        </span>
-      )}
-      <span className="text-sm font-medium">{account.displayName}</span>
-      <Button
-        variant="ghost"
-        size="sm"
-        title="Disconnect"
-        onClick={async () => {
-          await poster.disconnect();
-          setAccount(null);
-        }}
-      >
-        <LogOut size={14} />
-      </Button>
     </div>
   );
 }

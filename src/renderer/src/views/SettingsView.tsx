@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, ExternalLink } from "lucide-react";
-import type { Appearance, SettingsUpdate, TestResult } from "@shared/contract";
+import { Check, Copy, ExternalLink, Plus } from "lucide-react";
+import type { Account, Appearance, SettingsUpdate, TestResult } from "@shared/contract";
 import { Button, Card, Field, Input, Notice, Segmented, Toggle } from "@renderer/components/ui";
 import { errorMessage, poster } from "@renderer/lib/api";
+import { Avatar } from "@renderer/components/Avatar";
 import { useAppState } from "@renderer/lib/app-state";
 
 export function SettingsView() {
@@ -63,6 +64,8 @@ export function SettingsView() {
 
   return (
     <div className="max-w-3xl space-y-5">
+      <AccountsCard />
+
       <Card className="space-y-4">
         <Header
           title="TikTok app"
@@ -208,5 +211,123 @@ function Header({ title, subtitle, link, linkLabel }: { title: string; subtitle:
         </Button>
       )}
     </div>
+  );
+}
+
+/** Connected TikTok accounts, each with a hand-typed login email/ID so none get forgotten. */
+function AccountsCard() {
+  const { accounts, account: active, connecting, addAccount, cancelAdd, disconnect, setAccounts, selectAccount } = useAppState();
+
+  return (
+    <Card className="space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-[15px] font-semibold">TikTok accounts</h2>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted">
+            TikTok doesn't share account emails with apps, so type which email or ID each account logs in with.
+            To add another account, sign in to it in your browser first. Sandbox apps also need it under Target Users.
+          </p>
+        </div>
+        {connecting ? (
+          <Button size="sm" onClick={cancelAdd} className="shrink-0 whitespace-nowrap">
+            Cancel login
+          </Button>
+        ) : (
+          <Button size="sm" onClick={() => void addAccount()} className="shrink-0 whitespace-nowrap">
+            <Plus size={14} /> Add account
+          </Button>
+        )}
+      </div>
+
+      {accounts.length === 0 ? (
+        <p className="rounded-lg bg-sunken px-3 py-4 text-center text-sm text-muted">No accounts connected yet.</p>
+      ) : (
+        <ul className="divide-y divide-line rounded-lg border border-line">
+          {accounts.map((a) => (
+            <AccountRow
+              key={a.openId}
+              account={a}
+              active={a.openId === active?.openId}
+              onSelect={() => selectAccount(a.openId)}
+              onDisconnect={() => disconnect(a.openId)}
+              onSaveLogin={async (login) => setAccounts(await poster.setAccountNote(a.openId, login))}
+            />
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function AccountRow({
+  account: a,
+  active,
+  onSelect,
+  onDisconnect,
+  onSaveLogin,
+}: {
+  account: Account;
+  active: boolean;
+  onSelect(): void;
+  onDisconnect(): Promise<void>;
+  onSaveLogin(login: string): Promise<void>;
+}) {
+  const [login, setLogin] = useState(a.note);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => setLogin(a.note), [a.note]);
+
+  async function commit() {
+    if (login.trim() === a.note) return;
+    await onSaveLogin(login);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }
+
+  return (
+    <li className="space-y-3 p-3">
+      <div className="flex items-center gap-3">
+        <Avatar account={a} size={40} />
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-2 truncate text-sm font-medium">
+            {a.displayName}
+            {active && (
+              <span className="rounded-full bg-accent/15 px-1.5 text-[10px] font-semibold text-accent">POSTING</span>
+            )}
+          </p>
+          <p className="truncate text-xs text-muted">
+            {a.username ? `@${a.username}` : "@handle unavailable"} · connected{" "}
+            {new Date(a.connectedAt).toLocaleDateString()}
+          </p>
+          <p className="selectable truncate font-mono text-[10px] text-muted/70" title="TikTok open ID for this app">
+            {a.openId}
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          {!active && (
+            <Button size="sm" variant="ghost" onClick={onSelect}>
+              Post as this
+            </Button>
+          )}
+          <Button size="sm" variant="danger" onClick={() => void onDisconnect()}>
+            Disconnect
+          </Button>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 pl-[52px]">
+        <span className="w-28 shrink-0 text-xs text-muted">Login email / ID</span>
+        <Input
+          value={login}
+          onChange={(e) => setLogin(e.target.value)}
+          onBlur={() => void commit()}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          placeholder="e.g. me@gmail.com, or “Google login”"
+          aria-label={`Login email or ID for ${a.displayName}`}
+          className={!a.note ? "border-warn/60" : undefined}
+        />
+        <span className="w-16 shrink-0 text-[11px]">
+          {saved ? <span className="text-ok">Saved</span> : !a.note ? <span className="text-warn">Not set</span> : null}
+        </span>
+      </div>
+    </li>
   );
 }

@@ -77,11 +77,15 @@ export function registerIpc(d: Deps): void {
         menu.popup({ window: d.window() ?? undefined, callback: () => resolve(chosen) });
       }),
 
-    getAccount: () => d.session.getAccount(),
+    listAccounts: () => d.session.listAccounts(),
     connect: () => d.session.connect(),
     cancelConnect: () => cancelAuthorization(),
-    disconnect: () => d.session.disconnect(),
-    getCreatorInfo: () => d.session.creatorInfo(),
+    disconnect: (openId) => d.session.disconnect(openId),
+    setAccountNote: async (openId, note) => {
+      d.session.setNote(openId, note);
+      return d.session.listAccounts();
+    },
+    getCreatorInfo: (openId) => d.session.creatorInfo(openId),
 
     pickVideo: async () => {
       const r = await dialog.showOpenDialog(d.window()!, {
