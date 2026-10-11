@@ -14,7 +14,12 @@
   <img alt="Electron" src="https://img.shields.io/badge/Electron-44-47848F">
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6">
+  <a href="https://github.com/abehan7/tiktok-poster/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/abehan7/tiktok-poster"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/abehan7/tiktok-poster/releases/latest"><b>⬇ Download for macOS</b></a>
 </p>
 
 ![Dashboard](docs/screenshots/dashboard.png)
@@ -23,6 +28,7 @@
 
 ## Contents
 
+- [Download](#download)
 - [Features](#features)
 - [Tour](#tour)
 - [Quick start: try it in 2 minutes (no keys needed)](#quick-start-try-it-in-2-minutes-no-keys-needed)
@@ -38,6 +44,27 @@
 - [Contributing](#contributing)
 - [License](#license)
 - [Disclaimer](#disclaimer)
+
+---
+
+## Download
+
+Grab the latest DMG from the [Releases page](https://github.com/abehan7/tiktok-poster/releases/latest):
+
+| Your Mac | File |
+| --- | --- |
+| Apple Silicon (M1 or newer) | `TikTok-Poster-<version>-arm64.dmg` |
+| Intel | `TikTok-Poster-<version>-x64.dmg` |
+
+Open the DMG and drag **TikTok Poster** into **Applications**.
+
+The app isn't code-signed, so the first time you open it macOS may say it can't verify the developer. **Right-click the app → Open → Open** once, or run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/TikTok Poster.app"
+```
+
+The app starts in mock mode, so you can look around before adding any keys. See [Going live](#going-live-connect-real-accounts) when you're ready to post for real.
 
 ---
 
@@ -343,7 +370,9 @@ You can find the `igUserId` under each account in **Settings → Instagram accou
 npm run dist
 ```
 
-This creates `dist/mac-arm64/TikTok Poster.app`. Drag it into **Applications**.
+This creates `dist/mac-arm64/TikTok Poster.app`. Drag it into **Applications**. To build the DMGs instead, run `npm run dist:dmg`.
+
+Releases are built by GitHub Actions: pushing a tag like `v0.2.0` builds both DMGs and attaches them to a new GitHub Release (see `.github/workflows/release.yml`). Bump `version` in `package.json` first so the file names match.
 
 The build isn't code-signed, so the first time you open it, macOS may say it can't verify the developer. **Right-click the app → Open → Open** once, or run:
 

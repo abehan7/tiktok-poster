@@ -7,4 +7,9 @@ files:
 mac:
   icon: build/icon.icns
   category: public.app-category.social-networking
-  target: dir
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  artifactName: TikTok-Poster-${version}-${arch}.${ext}
+dmg:
+  title: TikTok Poster ${version}
