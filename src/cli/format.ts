@@ -100,11 +100,36 @@ export function mediaPath(url: string): string {
 }
 
 const ANSI = /\x1b\[[0-9;]*m/g;
-const width = (s: string) => [...s.replace(ANSI, "")].length;
+
+/** Hangul, CJK, full-width forms and emoji take two terminal columns. */
+function charWidth(ch: string): number {
+  const cp = ch.codePointAt(0)!;
+  if (cp === 0x200d || (cp >= 0xfe00 && cp <= 0xfe0f)) return 0; // joiners, variation selectors
+  const wide =
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2e80 && cp <= 0xa4cf) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe30 && cp <= 0xfe4f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x1f300 && cp <= 0x1faff) ||
+    (cp >= 0x20000 && cp <= 0x3fffd);
+  return wide ? 2 : 1;
+}
+
+const width = (s: string) => [...s.replace(ANSI, "")].reduce((w, ch) => w + charWidth(ch), 0);
 
 function fit(s: string, max: number): string {
-  const chars = [...s];
-  return chars.length <= max ? s : `${chars.slice(0, Math.max(0, max - 1)).join("")}…`;
+  if (width(s) <= max) return s;
+  let out = "";
+  let w = 0;
+  for (const ch of s) {
+    if (w + charWidth(ch) > max - 1) break;
+    out += ch;
+    w += charWidth(ch);
+  }
+  return `${out}…`;
 }
 
 /** Plain aligned columns; the last column is cut to the terminal width. */

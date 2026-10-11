@@ -152,7 +152,7 @@ function accountRows(accounts: AnyAccount[]): string[][] {
         : a.tiktok!.scopes.includes("video.publish")
           ? c.green("ok") + c.dim(" · draft + direct")
           : c.green("ok") + c.dim(" · draft only");
-    return [a.platform, a.name, a.tiktok?.displayName ?? a.instagram?.displayName ?? "", c.dim(a.id), a.tiktok?.note ?? a.instagram?.note ?? "", status];
+    return [a.platform, a.name, a.tiktok?.displayName ?? a.instagram?.displayName ?? "", status, c.dim(a.id), a.tiktok?.note ?? a.instagram?.note ?? ""];
   });
 }
 
@@ -178,7 +178,7 @@ const accounts: Command = {
       const all = (await allAccounts(client)).filter((a) => !platform || a.platform === platform);
       return print(ctx, all.map((a) => ({ platform: a.platform, ...(a.tiktok ?? a.instagram) })), () =>
         all.length
-          ? table(["PLATFORM", "ACCOUNT", "NAME", "ID", "NOTE", "LOGIN"], accountRows(all))
+          ? table(["PLATFORM", "ACCOUNT", "NAME", "LOGIN", "ID", "NOTE"], accountRows(all))
           : "No accounts connected. Run `tiktok-poster accounts connect tiktok`.",
       );
     }

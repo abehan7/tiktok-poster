@@ -66,7 +66,9 @@ export class Client {
         // not listening yet
       }
     }
-    throw new AppNotRunning(`${APP_NAME} didn't start within ${LAUNCH_WAIT_MS / 1000}s.`);
+    throw new AppNotRunning(
+      `${APP_NAME} isn't answering. If it's already open, it may be a version without the command line: update or restart it.`,
+    );
   }
 
   call<M extends Method>(method: M, ...params: Parameters<ControlApi[M]>): Promise<Result<M>> {
