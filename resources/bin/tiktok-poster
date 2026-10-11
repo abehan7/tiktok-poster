@@ -1,0 +1,7 @@
+#!/bin/sh
+# Runs the tiktok-poster CLI with the app's own Electron in Node mode, so no separate Node install is needed.
+# Symlink it onto your PATH:
+#   ln -s "/Applications/TikTok Poster.app/Contents/Resources/bin/tiktok-poster" /usr/local/bin/tiktok-poster
+here=$(dirname "$(readlink -f "$0")")
+contents=$(cd "$here/../.." && pwd)
+ELECTRON_RUN_AS_NODE=1 exec "$contents/MacOS/TikTok Poster" "$contents/Resources/app.asar/out/cli/index.js" "$@"

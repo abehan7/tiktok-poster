@@ -12,13 +12,17 @@
   },
   "homepage": "https://github.com/abehan7/tiktok-poster#readme",
   "main": "out/main/index.js",
+  "bin": {
+    "tiktok-poster": "out/cli/index.js"
+  },
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "electron-vite build && npm run build:cli",
+    "build:cli": "vite build -c vite.cli.config.ts",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "dist": "electron-vite build && electron-builder --mac --dir",
-    "dist:dmg": "electron-vite build && electron-builder --mac --publish never"
+    "dist": "npm run build && electron-builder --mac --dir",
+    "dist:dmg": "npm run build && electron-builder --mac --publish never"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20"

@@ -1,7 +1,10 @@
 import { app, BrowserWindow, dialog, Menu, nativeTheme, shell, systemPreferences, type MenuItemConstructorOptions } from "electron";
-import { join } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import type { HistoryEntry, Progress, View } from "@shared/contract";
-import { accentHex, registerIpc } from "./ipc";
+import { USER_DATA_ENV } from "@shared/control";
+import { ControlServer } from "./control/ControlServer";
+import { accentHex, createHandlers, readCarouselFolder, registerIpc } from "./ipc";
 import { InstagramSession } from "./instagram/InstagramSession";
 import { handleMediaProtocol, registerMediaScheme } from "./media";
 import { InstagramPostingService } from "./posting/InstagramPostingService";
@@ -16,6 +19,8 @@ import { TokenStore } from "./store/tokens";
 import { TikTokSession } from "./tiktok/TikTokSession";
 
 registerMediaScheme();
+// Lets a second copy run on its own data (e.g. trying the CLI in mock mode next to the real app).
+if (process.env[USER_DATA_ENV]) app.setPath("userData", resolve(process.env[USER_DATA_ENV]));
 
 let win: BrowserWindow | null = null;
 
@@ -111,11 +116,17 @@ app.whenReady().then(() => {
   // `scheduler` is assigned right below; events only fire after that.
   let scheduler: Scheduler;
   const notifier = new DraftNotifier(history, () => win);
+  const control = new ControlServer();
   const events = {
-    progress: (p: Progress) => win?.webContents.send("progress", p),
+    progress: (p: Progress) => {
+      win?.webContents.send("progress", p);
+      control.broadcast("progress", p);
+    },
     history: (e: HistoryEntry) => {
       notifier.onHistory(e);
-      win?.webContents.send("history", scheduler.decorate([e])[0]);
+      const decorated = scheduler.decorate([e])[0];
+      win?.webContents.send("history", decorated);
+      control.broadcast("history", decorated);
     },
   };
   const posting = new PostingService(session, settings, history, events);
@@ -123,7 +134,30 @@ app.whenReady().then(() => {
   const igPosting = new InstagramPostingService(instagram, settings, history, events);
   scheduler = new Scheduler(posting, igPosting, history);
 
-  registerIpc({ window: () => win, settings, session, history, posting, instagram, igPosting, scheduler });
+  const handlers = createHandlers({ window: () => win, settings, session, history, posting, instagram, igPosting, scheduler });
+  registerIpc(handlers);
+  control.start(handlers, {
+    ping: async () => ({
+      pid: process.pid,
+      version: app.getVersion(),
+      userData: app.getPath("userData"),
+      mockMode: settings.get().mockMode,
+      pending: scheduler.pendingCount(),
+    }),
+    show: async (view) => {
+      if (view) navigate(view);
+      else {
+        if (!win) createWindow();
+        win?.show();
+      }
+      app.focus({ steal: true });
+    },
+    readCarouselFolder: async (dir) => {
+      if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new Error(`Not a folder: ${dir}`);
+      return readCarouselFolder(dir);
+    },
+  });
+  app.on("will-quit", () => control.stop());
   posting.resumePolling();
   igPosting.resumePolling();
   scheduler.start();

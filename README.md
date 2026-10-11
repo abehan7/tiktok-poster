@@ -37,6 +37,7 @@
   - [2. Cloudflare R2 (for carousels and Instagram)](#2-cloudflare-r2-for-carousels-and-instagram)
   - [3. Instagram (optional)](#3-instagram-optional)
 - [Using the app](#using-the-app)
+- [Command line](#command-line)
 - [Build a standalone .app](#build-a-standalone-app)
 - [Where your data lives](#where-your-data-lives)
 - [Troubleshooting](#troubleshooting)
@@ -81,6 +82,7 @@ The app starts in mock mode, so you can look around before adding any keys. See 
 - **Mock mode.** With no keys set, the app runs against a built-in fake TikTok and Instagram, so you can try everything safely.
 - **Load a folder of slides.** Point it at a folder of numbered images plus a `caption.txt`, and the carousel fills itself in.
 - **Bulk scheduling** by dropping a JSON file into an import folder.
+- **A command-line tool** (`tiktok-poster`) that can do everything the app does: post, schedule, reschedule, manage accounts and settings, and watch uploads, with `--json` output for scripts.
 - **Private by design.** Secrets and tokens are encrypted with the macOS Keychain (Electron `safeStorage`). The only servers the app talks to are TikTok, Instagram, and your own R2 bucket.
 - Light and dark mode that follows macOS.
 
@@ -364,6 +366,73 @@ You can find the `igUserId` under each account in **Settings → Instagram accou
 
 ---
 
+## Command line
+
+`tiktok-poster` drives the running app from the terminal. It goes through the app, so posts get the same checks, scheduling, history and notifications as the UI, and keys and tokens never leave it. If the app is installed but not running, the CLI starts it in the background.
+
+### Install
+
+From the installed app (no Node needed, it runs on the app's own Electron):
+
+```bash
+sudo ln -sf "/Applications/TikTok Poster.app/Contents/Resources/bin/tiktok-poster" /usr/local/bin/tiktok-poster
+```
+
+From a checkout (with `npm run dev` running):
+
+```bash
+npm run build:cli && npm link
+```
+
+### Examples
+
+```bash
+tiktok-poster status                                   # running? what's scheduled, what's next
+tiktok-poster accounts                                 # connected TikTok + Instagram accounts
+tiktok-poster post video clip.mp4                      # draft to your only TikTok account's inbox
+tiktok-poster post video clip.mp4 -t @me -i @me_ig --at "tomorrow 9:00" -c "caption #tag"
+tiktok-poster post video clip.mp4 --direct --privacy public --wait
+tiktok-poster post carousel ./renders/day12 --at 21:00 # render folder: slides + caption.txt
+tiktok-poster upcoming                                 # scheduled posts, soonest first
+tiktok-poster reschedule 3c73 "+2h"                    # IDs can be any unique prefix
+tiktok-poster post-now 3c73 --wait
+tiktok-poster cancel 3c73
+tiktok-poster mark-published 2127                      # draft finished on your phone
+tiktok-poster list --state failed,missed
+tiktok-poster watch                                    # live upload progress and status changes
+```
+
+### Commands
+
+| Command | What it does |
+| --- | --- |
+| `post video <file>` / `post carousel <images…\|folder>` | Post now, or schedule with `--at`. `-t/--tiktok` and `-i/--instagram` pick accounts (repeatable). TikTok posts are drafts unless `--direct --privacy <who>` |
+| `import <manifest.json>` | Bulk-schedule a [manifest](#bulk-scheduling-import-folder) (relative paths are resolved) and print each result |
+| `list`, `upcoming`, `show <id>` | Browse posts. `list` filters by `--state`, `--platform`, `--account` |
+| `reschedule`, `post-now`, `cancel`, `refresh`, `wait` | Same as the buttons in History and the Calendar, plus waiting until a post is through |
+| `mark-published <id> [--undo]`, `remove <id>`, `clear-cancelled` | Tidy up the history |
+| `accounts [connect\|add-token\|info\|note\|remove]` | Manage TikTok and Instagram accounts |
+| `settings [set <key> <value>\|test-r2]` | Read or change settings; secrets read from stdin with `-` |
+| `status`, `watch`, `open [view]` | App state, live events, bring up the window |
+
+Run `tiktok-poster --help`, or `tiktok-poster <command> --help`, for every option. Schedule times can be `+30m`, `in 2h`, `21:30`, `9pm`, `tomorrow 9:00`, `2026-10-12 09:00` (local time) or ISO 8601.
+
+**For scripts:** `--json` prints machine-readable output. Exit codes are `0` for OK, `1` when something failed, `2` for bad arguments and `3` when the app isn't running. Deleting or disconnecting asks first unless you pass `--yes`.
+
+**Trying it out safely:** set `TIKTOK_POSTER_USER_DATA` to an empty folder for both the app and the CLI. You get a second copy in mock mode, next to your real one:
+
+```bash
+npm run build && TIKTOK_POSTER_USER_DATA=/tmp/tp-mock npx electron .
+```
+
+```bash
+TIKTOK_POSTER_USER_DATA=/tmp/tp-mock tiktok-poster accounts connect tiktok
+```
+
+The CLI talks to the app over a Unix socket in the data folder (`control.sock`) that only your user can open. Its protocol is in `src/shared/control.ts`.
+
+---
+
 ## Build a standalone .app
 
 ```bash
@@ -392,6 +461,7 @@ Everything is stored locally in:
 ├── tokens.json        # TikTok tokens (encrypted)
 ├── instagram.json     # Instagram tokens (encrypted)
 ├── history.json       # every post and its status
+├── control.sock       # the CLI's connection to the app, while it runs
 ├── schedules.json     # pending scheduled jobs
 ├── scheduled/<id>/    # copies of the files for scheduled posts
 ├── thumbs/            # small cover thumbnails for History
@@ -457,6 +527,7 @@ src/
 ├── main/                     # Electron main process (Node)
 │   ├── index.ts              # window, menu, startup wiring
 │   ├── ipc.ts                # IPC handlers (one per PosterApi method)
+│   ├── control/              # control socket that serves the same handlers to the CLI
 │   ├── tiktok/               # OAuth, live + mock TikTok gateways, sessions
 │   ├── instagram/            # login window, live + mock Graph API, sessions
 │   ├── posting/              # posting services, scheduler, import inbox
@@ -464,7 +535,8 @@ src/
 │   └── store/                # JSON stores, encrypted secrets and tokens
 ├── preload/                  # exposes window.poster to the renderer
 ├── renderer/src/             # React UI: views/, components/, lib/
-└── shared/contract.ts        # IPC types shared by main and renderer
+├── cli/                      # the tiktok-poster command (Node, no dependencies)
+└── shared/                   # IPC contract and control-socket protocol
 ```
 
 | Piece | Where |

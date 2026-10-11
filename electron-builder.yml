@@ -4,6 +4,9 @@ directories:
   output: dist
 files:
   - out/**
+extraResources:
+  - from: resources/bin
+    to: bin
 mac:
   icon: build/icon.icns
   category: public.app-category.social-networking

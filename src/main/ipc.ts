@@ -13,7 +13,7 @@ import type { HistoryStore } from "./store/history";
 import type { SettingsStore } from "./store/settings";
 import type { TikTokSession } from "./tiktok/TikTokSession";
 
-type Handlers = Omit<PosterApi, "pathForFile" | "onProgress" | "onHistory" | "onAccentColor" | "onNavigate">;
+export type Handlers = Omit<PosterApi, "pathForFile" | "onProgress" | "onHistory" | "onAccentColor" | "onNavigate">;
 
 const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".webp"];
 const VIDEO_EXTS = [".mp4", ".mov", ".webm"];
@@ -29,7 +29,7 @@ interface Deps {
   scheduler: Scheduler;
 }
 
-function readCarouselFolder(dir: string): CarouselFolder {
+export function readCarouselFolder(dir: string): CarouselFolder {
   // Slides are numbered images; "_"-prefixed files (e.g. debug sheets) are skipped.
   const images = readdirSync(dir)
     .filter((f) => IMAGE_EXTS.includes(extname(f).toLowerCase()) && !f.startsWith("_") && !f.startsWith("."))
@@ -52,8 +52,8 @@ function assertPicked(paths: string[]) {
   for (const p of paths) if (!isAllowed(p)) throw new Error(`File wasn't picked in the app: ${p}`);
 }
 
-export function registerIpc(d: Deps): void {
-  const handlers: Handlers = {
+export function createHandlers(d: Deps): Handlers {
+  return {
     getSettings: async () => d.settings.view(),
     saveSettings: async (u) => {
       const view = d.settings.update(u);
@@ -199,7 +199,9 @@ export function registerIpc(d: Deps): void {
       if (/^https:\/\//.test(url)) await shell.openExternal(url);
     },
   };
+}
 
+export function registerIpc(handlers: Handlers): void {
   for (const [channel, fn] of Object.entries(handlers)) {
     ipcMain.handle(channel, async (_e, ...args: unknown[]) => {
       try {
