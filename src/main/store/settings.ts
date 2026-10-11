@@ -17,6 +17,9 @@ interface StoredSettings {
   r2KeyPrefix: string;
   carouselFolder: string;
   appearance: Appearance;
+  igAppId: string;
+  igAppSecretSealed: string;
+  igRedirectUri: string;
 }
 
 /** Plain settings with secrets decrypted — main process only. */
@@ -36,8 +39,19 @@ export interface Settings {
   };
   carouselFolder: string;
   appearance: Appearance;
+  instagram: {
+    appId: string;
+    appSecret: string;
+    redirectUri: string;
+  };
   mockMode: boolean;
 }
+
+/**
+ * Instagram Login only redirects to https URLs. The login runs in an app window
+ * that catches the redirect before it loads, so the URL never has to exist.
+ */
+export const DEFAULT_IG_REDIRECT = "https://localhost/instagram-callback/";
 
 const defaults = (): StoredSettings => ({
   clientKey: "",
@@ -50,8 +64,11 @@ const defaults = (): StoredSettings => ({
   r2Bucket: "",
   r2PublicBaseUrl: "",
   r2KeyPrefix: "tiktok/",
-  carouselFolder: join(homedir(), "Documents/Github/tubelingo-carousel/out"),
+  carouselFolder: join(homedir(), "Pictures"),
   appearance: "system",
+  igAppId: "",
+  igAppSecretSealed: "",
+  igRedirectUri: DEFAULT_IG_REDIRECT,
 });
 
 /** TikTok's desktop Login Kit only accepts loopback redirects with an explicit port. */
@@ -78,6 +95,11 @@ export class SettingsStore {
       },
       carouselFolder: s.carouselFolder,
       appearance: s.appearance,
+      instagram: {
+        appId: s.igAppId,
+        appSecret: unseal(s.igAppSecretSealed),
+        redirectUri: s.igRedirectUri,
+      },
       mockMode: !s.clientKey,
     };
   }
@@ -98,6 +120,9 @@ export class SettingsStore {
       r2KeyPrefix: s.r2KeyPrefix,
       carouselFolder: s.carouselFolder,
       appearance: s.appearance,
+      igAppId: s.igAppId,
+      hasIgAppSecret: Boolean(s.igAppSecretSealed),
+      igRedirectUri: s.igRedirectUri,
       mockMode: !s.clientKey,
     };
   }
@@ -118,6 +143,9 @@ export class SettingsStore {
       r2KeyPrefix: normalizePrefix(trim(u.r2KeyPrefix, s.r2KeyPrefix)),
       carouselFolder: trim(u.carouselFolder, s.carouselFolder),
       appearance: u.appearance && ["system", "light", "dark"].includes(u.appearance) ? u.appearance : s.appearance,
+      igAppId: trim(u.igAppId, s.igAppId),
+      igAppSecretSealed: u.igAppSecret ? seal(u.igAppSecret.trim()) : s.igAppSecretSealed,
+      igRedirectUri: normalizeIgRedirect(trim(u.igRedirectUri, s.igRedirectUri)),
     };
     this.file.write(next);
     return this.view();
@@ -127,4 +155,10 @@ export class SettingsStore {
 function normalizePrefix(prefix: string): string {
   const p = prefix.replace(/^\/+/, "");
   return p && !p.endsWith("/") ? `${p}/` : p;
+}
+
+function normalizeIgRedirect(uri: string): string {
+  if (!uri) return DEFAULT_IG_REDIRECT;
+  if (!/^https:\/\/[^/]+/.test(uri)) throw new Error("The Instagram redirect URI must start with https://");
+  return uri;
 }

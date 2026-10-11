@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight, FolderOpen, ImagePlus, Images, Send, Star, X } from "lucide-react";
 import type { LocalFile } from "@shared/contract";
+import { DestinationPicker, igCaptionOk, InstagramOptions, useDestinations, type Destinations } from "@renderer/components/Destinations";
 import { DropZone } from "@renderer/components/DropZone";
 import { NotConnected, PostModePicker, type ModeState } from "@renderer/components/PostOptions";
 import { Button, Card, Field, Input, Notice, ProgressBar, Textarea, Toggle } from "@renderer/components/ui";
@@ -11,10 +12,15 @@ import { formatWhen, SchedulePicker, scheduleOk } from "@renderer/components/Sch
 import { useProgress } from "@renderer/lib/use-progress";
 
 const MAX_IMAGES = 35;
+const IG_MAX_IMAGES = 10;
 const isImage = (f: LocalFile) => /\.(png|jpe?g|webp)$/i.test(f.name);
 
 export function CarouselView({ onPosted }: { onPosted(): void }) {
-  const { account, settings } = useAppState();
+  const { account, settings, igAccount } = useAppState();
+  const [dest, setDest] = useDestinations();
+  /** Platforms that already went out when the other one failed, so a retry doesn't post twice. */
+  const [sent, setSent] = useState<Partial<Destinations>>({});
+  const [igCaption, setIgCaption] = useState("");
   const [images, setImages] = useState<LocalFile[]>([]);
   const [cover, setCover] = useState(0);
   const [source, setSource] = useState<string | null>(null);
@@ -31,13 +37,18 @@ export function CarouselView({ onPosted }: { onPosted(): void }) {
   const onModeChange = useCallback((v: ModeState) => setMode(v), []);
 
   const direct = mode.mode === "DIRECT";
-  const ready = Boolean(scheduleOk(when) && 
-    account &&
+  const toTikTok = dest.tiktok && !sent.tiktok;
+  const toInstagram = dest.instagram && !sent.instagram;
+  const caption = igCaption.trim() ? igCaption : dest.tiktok ? description : "";
+  const tiktokReady = Boolean(account && title.length <= 90 && description.length <= 4000 && (!direct || mode.privacyLevel));
+  const igReady = Boolean(igAccount && igCaptionOk(caption));
+  const ready = Boolean(
+    scheduleOk(when) &&
       images.length > 0 &&
       images.length <= MAX_IMAGES &&
-      title.length <= 90 &&
-      description.length <= 4000 &&
-      (!direct || mode.privacyLevel),
+      (toTikTok || toInstagram) &&
+      (!toTikTok || tiktokReady) &&
+      (!toInstagram || igReady),
   );
 
   const add = (files: LocalFile[]) => setImages((cur) => [...cur, ...files.filter(isImage)].slice(0, MAX_IMAGES));
@@ -70,33 +81,62 @@ export function CarouselView({ onPosted }: { onPosted(): void }) {
     if (!ready) return;
     setBusy(true);
     setError(null);
-    try {
-      const input = {
-        openId: account!.openId,
-        filePaths: images.map((i) => i.path),
-        mode: mode.mode,
-        title,
-        description,
-        privacyLevel: mode.privacyLevel || "SELF_ONLY",
-        coverIndex: cover,
-        disableComment: !allowComment,
-        autoAddMusic: autoMusic,
-        isAigc,
-      };
-      if (when) await poster.schedulePhotos(input, new Date(when).toISOString());
-      else await poster.postPhotos(input);
-      setImages([]);
-      setTitle("");
-      setDescription("");
-      setSource(null);
-      setWhen(null);
-      onPosted();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
+    const at = when ? new Date(when).toISOString() : null;
+    const failures: string[] = [];
+    const done = { ...sent };
+    if (toTikTok) {
+      try {
+        const input = {
+          openId: account!.openId,
+          filePaths: images.map((i) => i.path),
+          mode: mode.mode,
+          title,
+          description,
+          privacyLevel: mode.privacyLevel || "SELF_ONLY",
+          coverIndex: cover,
+          disableComment: !allowComment,
+          autoAddMusic: autoMusic,
+          isAigc,
+        };
+        if (at) await poster.schedulePhotos(input, at);
+        else await poster.postPhotos(input);
+        done.tiktok = true;
+      } catch (err) {
+        failures.push(`TikTok: ${errorMessage(err)}`);
+      }
     }
+    if (toInstagram) {
+      try {
+        const input = { igUserId: igAccount!.id, filePaths: images.slice(0, IG_MAX_IMAGES).map((i) => i.path), caption };
+        if (at) await poster.scheduleIgPhotos(input, at);
+        else await poster.postIgPhotos(input);
+        done.instagram = true;
+      } catch (err) {
+        failures.push(`Instagram: ${errorMessage(err)}`);
+      }
+    }
+    setBusy(false);
+    if (failures.length) {
+      setSent(done);
+      setError(failures.join("\n"));
+      return;
+    }
+    setImages([]);
+    setTitle("");
+    setDescription("");
+    setIgCaption("");
+    setSource(null);
+    setWhen(null);
+    setSent({});
+    onPosted();
   }
+
+  const action = [
+    toTikTok && (direct ? "Post to TikTok" : "Send to TikTok inbox"),
+    toInstagram && (toTikTok ? "Instagram" : "Post to Instagram"),
+  ]
+    .filter(Boolean)
+    .join(" + ");
 
   return (
     <div className="space-y-5">
@@ -123,7 +163,7 @@ export function CarouselView({ onPosted }: { onPosted(): void }) {
           {images.length === 0 ? (
             <div className="flex flex-col items-center gap-2 text-center">
               <Images size={36} className="text-muted" />
-              <p className="text-sm">Drop images here, or load a tubelingo-carousel render folder</p>
+              <p className="text-sm">Drop images here, or load a render folder</p>
               <p className="text-xs text-muted">PNG, JPG or WebP · the folder's caption.txt fills the description</p>
             </div>
           ) : (
@@ -171,28 +211,53 @@ export function CarouselView({ onPosted }: { onPosted(): void }) {
       </Card>
 
       <Card className="space-y-5">
-        {!account && <NotConnected />}
-        <PostModePicker value={mode} onChange={onModeChange} />
+        <DestinationPicker value={dest} onChange={setDest} sent={sent} />
         <SchedulePicker value={when} onChange={setWhen} />
 
-        <Field label="Title" counter={{ value: title.length, max: 90 }} hint="Shown in bold above the description.">
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Optional" />
-        </Field>
-        <Field label="Description" counter={{ value: description.length, max: 4000 }} hint="Caption with #hashtags.">
-          <Textarea rows={5} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </Field>
+        {dest.tiktok && !sent.tiktok && (
+          <section className="space-y-5">
+            {!account && <NotConnected />}
+            <PostModePicker value={mode} onChange={onModeChange} />
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          {direct && (
-            <>
-              <Toggle label="Auto-add music" hint="TikTok picks a recommended sound" checked={autoMusic} onChange={setAutoMusic} />
-              <Toggle label="Allow comments" checked={allowComment} onChange={setAllowComment} />
-            </>
-          )}
-          <Toggle label="AI-generated content" hint="Adds TikTok's AIGC label" checked={isAigc} onChange={setIsAigc} />
-        </div>
+            <Field label="Title" counter={{ value: title.length, max: 90 }} hint="Shown in bold above the description.">
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Optional" />
+            </Field>
+            <Field label="Description" counter={{ value: description.length, max: 4000 }} hint="Caption with #hashtags.">
+              <Textarea rows={5} value={description} onChange={(e) => setDescription(e.target.value)} />
+            </Field>
 
-        {error && <Notice tone="bad">{error}</Notice>}
+            <div className="grid gap-3 sm:grid-cols-2">
+              {direct && (
+                <>
+                  <Toggle label="Auto-add music" hint="TikTok picks a recommended sound" checked={autoMusic} onChange={setAutoMusic} />
+                  <Toggle label="Allow comments" checked={allowComment} onChange={setAllowComment} />
+                </>
+              )}
+              <Toggle label="AI-generated content" hint="Adds TikTok's AIGC label" checked={isAigc} onChange={setIsAigc} />
+            </div>
+          </section>
+        )}
+
+        {dest.instagram && !sent.instagram && (
+          <InstagramOptions
+            caption={igCaption}
+            onCaption={setIgCaption}
+            fallbackCaption={dest.tiktok ? description : ""}
+            captionPlaceholder={dest.tiktok && description ? "Leave empty to use the TikTok description" : "Caption with #hashtags"}
+            notes={
+              <>
+                {" "}
+                {images.length > 1 ? "Posted as a carousel" : "Posted as a photo"}; slides taller than 4:5 get thin side bars so
+                nothing is cropped. Slide 1 is the cover.
+                {images.length > IG_MAX_IMAGES && (
+                  <strong className="text-warn"> Instagram takes 10 slides, so only slides 1–10 go there.</strong>
+                )}
+              </>
+            }
+          />
+        )}
+
+        {error && <Notice tone="bad"><span className="whitespace-pre-line">{error}</span></Notice>}
         {busy && progress && <ProgressBar stage={progress.stage} fraction={progress.fraction} />}
 
         <div className="flex justify-end">
@@ -201,9 +266,7 @@ export function CarouselView({ onPosted }: { onPosted(): void }) {
               ? when ? "Scheduling…" : "Uploading…"
               : when
                 ? `Schedule · ${formatWhen(new Date(when).toISOString())}`
-                : direct
-                  ? "Post to TikTok"
-                  : "Send to TikTok inbox"}
+                : action}
           </Button>
         </div>
       </Card>

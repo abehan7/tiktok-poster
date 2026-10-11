@@ -2,15 +2,18 @@ import { app, nativeImage, powerSaveBlocker } from "electron";
 import { constants } from "node:fs";
 import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import type { HistoryEntry, PhotoPostInput, VideoPostInput } from "@shared/contract";
+import type { HistoryEntry, IgPhotoPostInput, IgVideoPostInput, PhotoPostInput, VideoPostInput } from "@shared/contract";
 import { toLocalFile } from "../media";
 import type { HistoryStore } from "../store/history";
 import { JsonFile } from "../store/jsonFile";
+import { igPhotoContent, igVideoContent, photoLabel, type InstagramPostingService } from "./InstagramPostingService";
 import { photoContent, videoContent, type PostingService } from "./PostingService";
 
 type Job =
   | { entryId: string; kind: "video"; input: VideoPostInput }
-  | { entryId: string; kind: "photo"; input: PhotoPostInput };
+  | { entryId: string; kind: "photo"; input: PhotoPostInput }
+  | { entryId: string; kind: "ig-video"; input: IgVideoPostInput }
+  | { entryId: string; kind: "ig-photo"; input: IgPhotoPostInput };
 
 interface JobsDoc {
   jobs: Job[];
@@ -34,6 +37,7 @@ export class Scheduler {
 
   constructor(
     private readonly posting: PostingService,
+    private readonly instagram: InstagramPostingService,
     private readonly history: HistoryStore,
   ) {}
 
@@ -52,7 +56,7 @@ export class Scheduler {
     await this.posting.validateVideo(input);
     const entry = this.posting.createEntry(
       input.openId,
-      { kind: "video", mode: input.mode, label: input.mode === "DIRECT" && input.title ? input.title : basename(input.filePath), thumbUrl: null },
+      { kind: "video", mode: input.mode, label: input.title.split("\n")[0] || basename(input.filePath), thumbUrl: null },
       when,
     );
     const [filePath] = await this.stashOrRollback(entry.id, [input.filePath]);
@@ -79,6 +83,33 @@ export class Scheduler {
       this.posting.update(entry.id, {
         thumbUrl: toLocalFile(filePaths[0]).url,
         content: photoContent(input, filePaths.map((p) => toLocalFile(p).url)),
+      }),
+    );
+  }
+
+  async scheduleIgVideo(input: IgVideoPostInput, at: string): Promise<HistoryEntry> {
+    const when = parseFuture(at);
+    await this.instagram.validateVideo(input);
+    const entry = this.instagram.createEntry(
+      input.igUserId,
+      { kind: "video", label: input.caption.split("\n")[0] || basename(input.filePath), thumbUrl: null },
+      when,
+    );
+    const [filePath] = await this.stashOrRollback(entry.id, [input.filePath]);
+    this.save({ entryId: entry.id, kind: "ig-video", input: { ...input, filePath } });
+    return this.withJob(this.instagram.update(entry.id, { content: igVideoContent(input, toLocalFile(filePath).url) }));
+  }
+
+  async scheduleIgPhotos(input: IgPhotoPostInput, at: string): Promise<HistoryEntry> {
+    const when = parseFuture(at);
+    this.instagram.validatePhotos(input);
+    const entry = this.instagram.createEntry(input.igUserId, { kind: "photo", label: photoLabel(input), thumbUrl: null }, when);
+    const filePaths = await this.stashOrRollback(entry.id, input.filePaths);
+    this.save({ entryId: entry.id, kind: "ig-photo", input: { ...input, filePaths } });
+    return this.withJob(
+      this.instagram.update(entry.id, {
+        thumbUrl: toLocalFile(filePaths[0]).url,
+        content: igPhotoContent(input, filePaths.map((p) => toLocalFile(p).url)),
       }),
     );
   }
@@ -144,9 +175,12 @@ export class Scheduler {
     this.running.add(entryId);
     try {
       if (job.kind === "video") await this.posting.postVideo(job.input, entryId);
-      else await this.posting.postPhotos(job.input, entryId);
-      // Sent: TikTok has the video / the images are on R2, so the copies can go (keep a thumbnail).
+      else if (job.kind === "photo") await this.posting.postPhotos(job.input, entryId);
+      else if (job.kind === "ig-video") await this.instagram.postVideo(job.input, entryId);
+      else await this.instagram.postPhotos(job.input, entryId);
+      // Sent: TikTok has the video / the media is on R2, so the copies can go (keep a thumbnail).
       if (job.kind === "photo") await this.keepThumb(entryId, job.input.filePaths[job.input.coverIndex] ?? job.input.filePaths[0]);
+      if (job.kind === "ig-photo") await this.keepThumb(entryId, job.input.filePaths[0]);
       await this.drop(entryId);
     } catch {
       // PostingService already marked the entry FAILED with the reason; keep the job for Post now.

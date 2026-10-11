@@ -5,6 +5,10 @@ interface HistoryDoc {
   entries: HistoryEntry[];
 }
 
+const KEEP = 500;
+/** Scheduled posts and TikTok drafts not yet marked posted. */
+const waiting = (e: HistoryEntry) => e.status === "SCHEDULED" || (e.status === "SEND_TO_USER_INBOX" && !e.finishedAt);
+
 /** Post history, newest first. Small enough to rewrite on every change. */
 export class HistoryStore {
   private readonly file = new JsonFile<HistoryDoc>("history.json", () => ({ entries: [] }));
@@ -18,7 +22,10 @@ export class HistoryStore {
   }
 
   add(entry: HistoryEntry): void {
-    this.file.write({ entries: [entry, ...this.list()].slice(0, 500) });
+    // Keep the newest 500, but never drop a post that's still waiting: the scheduler deletes any job whose
+    // entry is gone, and bulk imports create entries days before they go out.
+    const all = [entry, ...this.list()];
+    this.file.write({ entries: all.filter((e, i) => i < KEEP || waiting(e)) });
   }
 
   update(id: string, patch: Partial<HistoryEntry>): HistoryEntry {
@@ -31,6 +38,11 @@ export class HistoryStore {
   }
 
   remove(id: string): void {
-    this.file.write({ entries: this.list().filter((e) => e.id !== id) });
+    this.removeMany([id]);
+  }
+
+  removeMany(ids: string[]): void {
+    const drop = new Set(ids);
+    this.file.write({ entries: this.list().filter((e) => !drop.has(e.id)) });
   }
 }

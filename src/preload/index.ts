@@ -14,9 +14,11 @@ const invoke =
 const channels = [
   "getSettings", "saveSettings", "testR2", "chooseFolder", "getAccentColor", "contextMenu",
   "listAccounts", "connect", "cancelConnect", "disconnect", "setAccountNote", "getCreatorInfo",
+  "listIgAccounts", "connectInstagram", "addInstagramToken", "disconnectInstagram", "setIgAccountNote",
   "pickVideo", "pickImages", "pickCarouselFolder", "registerFiles",
-  "postVideo", "postPhotos", "scheduleVideo", "schedulePhotos", "reschedule", "cancelScheduled", "postScheduledNow",
-  "listHistory", "refreshStatus", "removeHistory", "setFinished", "openExternal",
+  "postVideo", "postPhotos", "scheduleVideo", "schedulePhotos",
+  "postIgPhotos", "postIgVideo", "scheduleIgPhotos", "scheduleIgVideo", "reschedule", "cancelScheduled", "postScheduledNow",
+  "listHistory", "refreshStatus", "removeHistory", "clearCancelled", "setFinished", "openExternal",
 ] as const;
 
 const api = {

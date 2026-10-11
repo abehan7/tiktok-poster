@@ -3,7 +3,14 @@
   "productName": "TikTok Poster",
   "version": "0.1.0",
   "private": true,
-  "description": "Personal desktop app for posting videos and photo carousels to TikTok",
+  "description": "Desktop app for posting and scheduling videos and photo carousels to TikTok and Instagram",
+  "license": "MIT",
+  "author": "abehan7",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abehan7/tiktok-poster.git"
+  },
+  "homepage": "https://github.com/abehan7/tiktok-poster#readme",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

@@ -6,6 +6,8 @@
 
 export type Appearance = "system" | "light" | "dark";
 
+export type Platform = "tiktok" | "instagram";
+
 export type PrivacyLevel =
   | "PUBLIC_TO_EVERYONE"
   | "MUTUAL_FOLLOW_FRIENDS"
@@ -42,7 +44,10 @@ export interface SettingsView {
   r2KeyPrefix: string;
   carouselFolder: string;
   appearance: Appearance;
-  /** True when no TikTok client key is set: everything runs against a fake TikTok. */
+  igAppId: string;
+  hasIgAppSecret: boolean;
+  igRedirectUri: string;
+  /** True when no TikTok client key is set: everything runs against a fake TikTok (and a fake Instagram). */
   mockMode: boolean;
 }
 
@@ -60,6 +65,9 @@ export interface SettingsUpdate {
   r2KeyPrefix?: string;
   carouselFolder?: string;
   appearance?: Appearance;
+  igAppId?: string;
+  igAppSecret?: string;
+  igRedirectUri?: string;
 }
 
 export interface Account {
@@ -72,6 +80,26 @@ export interface Account {
   note: string;
   scopes: string[];
   connectedAt: string;
+  /** Why the saved login stopped working (revoked, password changed…), or null if it worked at the last check. */
+  loginProblem: string | null;
+}
+
+/** An Instagram professional (business/creator) account connected through Instagram Login. */
+export interface IgAccount {
+  /** Instagram professional account ID (the `<IG_ID>` in publishing calls). */
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  /** BUSINESS or MEDIA_CREATOR. */
+  accountType: string | null;
+  /** Free-text reminder of which login this account uses. */
+  note: string;
+  connectedAt: string;
+  /** When the long-lived token runs out if it's never refreshed (it's refreshed automatically while the app is used). */
+  expiresAt: string;
+  /** Why the saved login stopped working (revoked, password changed…), or null if it worked at the last check. */
+  loginProblem: string | null;
 }
 
 export interface CreatorInfo {
@@ -124,6 +152,24 @@ export interface PhotoPostInput {
   isAigc: boolean;
 }
 
+export interface IgPhotoPostInput {
+  igUserId: string;
+  /** 1 = single image post, 2–10 = carousel. The first image is the cover. */
+  filePaths: string[];
+  /** ≤ 2200 chars, ≤ 30 hashtags. */
+  caption: string;
+}
+
+export interface IgVideoPostInput {
+  igUserId: string;
+  filePath: string;
+  caption: string;
+  /** Frame used as the Reel cover. */
+  coverTimestampMs: number;
+  /** Show the Reel in the main feed too, not only the Reels tab. */
+  shareToFeed: boolean;
+}
+
 /** What was (or will be) posted, kept so a post can be opened later. */
 export interface PostContent {
   title: string;
@@ -140,14 +186,17 @@ export interface PostContent {
 
 export interface HistoryEntry {
   id: string;
+  /** Missing on entries made before Instagram support (= TikTok). */
+  platform?: Platform;
   kind: "video" | "photo";
   mode: PostMode;
   label: string;
-  /** Account it was posted as (null for posts made before multi-account support). */
+  /** Account it was posted as: TikTok open ID or Instagram account ID (null for posts made before multi-account support). */
   openId: string | null;
   accountName: string | null;
   /** media:// URL of the first image or the video, for the thumbnail. */
   thumbUrl: string | null;
+  /** TikTok publish ID, or the Instagram media container ID. */
   publishId: string | null;
   status: PostStatus;
   /** ISO time a scheduled post goes out (null for immediate posts). */
@@ -162,11 +211,13 @@ export interface HistoryEntry {
   content?: PostContent;
   failReason: string | null;
   postIds: string[];
+  /** Public link once published (Instagram). */
+  permalink?: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-/** A tubelingo-carousel style render folder: N slide images + caption.txt. */
+/** A render folder: N numbered slide images + caption.txt. */
 export interface CarouselFolder {
   path: string;
   images: LocalFile[];
@@ -183,7 +234,7 @@ export interface Progress {
 /** A native context-menu item; `id` comes back from `contextMenu` when chosen. */
 export type MenuItem = { id: string; label: string; enabled?: boolean } | { separator: true };
 
-export type View = "carousel" | "video" | "calendar" | "history" | "settings";
+export type View = "dashboard" | "carousel" | "video" | "calendar" | "history" | "settings";
 
 export interface TestResult {
   ok: boolean;
@@ -208,6 +259,14 @@ export interface PosterApi {
   setAccountNote(openId: string, note: string): Promise<Account[]>;
   getCreatorInfo(openId: string): Promise<CreatorInfo>;
 
+  listIgAccounts(): Promise<IgAccount[]>;
+  /** Instagram Login in an app window; adds whichever professional account signs in. */
+  connectInstagram(): Promise<IgAccount>;
+  /** Adds an account from a long-lived token generated in the Meta App Dashboard. */
+  addInstagramToken(token: string): Promise<IgAccount>;
+  disconnectInstagram(id: string): Promise<void>;
+  setIgAccountNote(id: string, note: string): Promise<IgAccount[]>;
+
   pickVideo(): Promise<LocalFile | null>;
   pickImages(): Promise<LocalFile[]>;
   pickCarouselFolder(): Promise<CarouselFolder | null>;
@@ -219,6 +278,10 @@ export interface PosterApi {
   /** Validates now, copies the files, and posts at `at` (ISO) while the app is running. */
   scheduleVideo(input: VideoPostInput, at: string): Promise<HistoryEntry>;
   schedulePhotos(input: PhotoPostInput, at: string): Promise<HistoryEntry>;
+  postIgPhotos(input: IgPhotoPostInput): Promise<HistoryEntry>;
+  postIgVideo(input: IgVideoPostInput): Promise<HistoryEntry>;
+  scheduleIgPhotos(input: IgPhotoPostInput, at: string): Promise<HistoryEntry>;
+  scheduleIgVideo(input: IgVideoPostInput, at: string): Promise<HistoryEntry>;
   reschedule(entryId: string, at: string): Promise<HistoryEntry>;
   cancelScheduled(entryId: string): Promise<HistoryEntry>;
   postScheduledNow(entryId: string): Promise<void>;
@@ -226,8 +289,11 @@ export interface PosterApi {
   listHistory(): Promise<HistoryEntry[]>;
   refreshStatus(entryId: string): Promise<HistoryEntry>;
   removeHistory(entryId: string): Promise<void>;
+  /** Deletes the given cancelled posts from history; returns how many went. */
+  clearCancelled(entryIds: string[]): Promise<number>;
   /** Marks a delivered draft as published in TikTok (or undoes it). */
   setFinished(entryId: string, finished: boolean): Promise<HistoryEntry>;
+  /** Opens an https URL in the default browser. */
   openExternal(url: string): Promise<void>;
 
   /** Path of a File from a drop event. */

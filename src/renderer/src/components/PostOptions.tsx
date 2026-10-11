@@ -76,10 +76,14 @@ export function PostModePicker({
               <option key={a.openId} value={a.openId}>
                 {a.displayName}
                 {a.username ? ` (@${a.username})` : ""}
+                {a.loginProblem ? " · login dead" : ""}
               </option>
             ))}
           </select>
         </Field>
+      )}
+      {account?.loginProblem && (
+        <Notice tone="bad">{account.loginProblem} Posting to this account will fail until you reconnect it in Settings.</Notice>
       )}
       <div className="flex items-center justify-between gap-4">
         <Segmented

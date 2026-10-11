@@ -103,7 +103,11 @@ export function AccountMenu({ onManage }: { onManage(): void }) {
                     <span className="block truncate text-[11px] text-muted">
                       {a.username ? `@${a.username}` : "TikTok account"}
                     </span>
-                    {a.note ? (
+                    {a.loginProblem ? (
+                      <span className="block truncate text-[11px] text-bad" title={a.loginProblem}>
+                        Login dead: reconnect in Settings
+                      </span>
+                    ) : a.note ? (
                       <span className="selectable block truncate text-[11px] text-text/80">{a.note}</span>
                     ) : (
                       <span className="block truncate text-[11px] text-warn">Login email / ID not set</span>

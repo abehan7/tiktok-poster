@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
-import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Inbox, XCircle } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Inbox, Trash2, XCircle } from "lucide-react";
+import type { HistoryEntry } from "@shared/contract";
+import { AccountAvatar, AccountBar } from "@renderer/components/AccountBar";
+import { PlatformIcon, platformOf } from "@renderer/components/Platform";
 import { PostDetail } from "@renderer/components/PostDetail";
 import { Button, Card } from "@renderer/components/ui";
-import { useAppState } from "@renderer/lib/app-state";
-import { derive, type PostState } from "@renderer/lib/post-state";
+import { accountKey, groupByAccount, useAccountRefs, type AccountRef } from "@renderer/lib/accounts";
+import { derive, type DerivedState, type PostState } from "@renderer/lib/post-state";
 import { useHistory } from "@renderer/lib/use-history";
 import { HistoryRow } from "./HistoryView";
 
@@ -13,22 +16,25 @@ const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 const sameDay = (a: Date, b: Date) => dayKey(a) === dayKey(b);
 
 /** Month grid of posts by their scheduled (or sent) time, colored by status. */
-export function CalendarView() {
+export function CalendarView({ account, onAccount }: { account: string; onAccount(id: string): void }) {
   const api = useHistory();
-  const { accounts } = useAppState();
+  const refs = useAccountRefs(api.entries);
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selected, setSelected] = useState<Date>(() => new Date());
-  const [accountFilter, setAccountFilter] = useState<string>("all");
   const [stateFilter, setStateFilter] = useState<PostState | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+
+  // A remembered account that's gone falls back to everything.
+  const accountFilter = account !== "all" && refs.some((r) => r.id === account) ? account : "all";
+  const allAccounts = accountFilter === "all";
 
   const visible = useMemo(
     () =>
       api.entries
-        .filter((e) => accountFilter === "all" || e.openId === accountFilter)
+        .filter((e) => allAccounts || accountKey(e) === accountFilter)
         .map((e) => ({ e, d: derive(e, api.now) }))
         .filter(({ d }) => !stateFilter || d.state === stateFilter || (stateFilter === "failed" && d.state === "missed")),
-    [api.entries, api.now, accountFilter, stateFilter],
+    [api.entries, api.now, allAccounts, accountFilter, stateFilter],
   );
 
   const byDay = useMemo(() => {
@@ -45,12 +51,39 @@ export function CalendarView() {
   const counts = useMemo(() => {
     const c: Partial<Record<PostState, number>> = {};
     for (const e of api.entries) {
-      if (accountFilter !== "all" && e.openId !== accountFilter) continue;
+      if (!allAccounts && accountKey(e) !== accountFilter) continue;
       const s = derive(e, api.now).state;
       c[s] = (c[s] ?? 0) + 1;
     }
     return c;
-  }, [api.entries, api.now, accountFilter]);
+  }, [api.entries, api.now, allAccounts, accountFilter]);
+
+  // Chip counts: posts per account in the month on screen.
+  const monthCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    let total = 0;
+    for (const e of api.entries) {
+      const when = derive(e, api.now).when;
+      if (when.getFullYear() !== month.getFullYear() || when.getMonth() !== month.getMonth()) continue;
+      c[accountKey(e)] = (c[accountKey(e)] ?? 0) + 1;
+      total++;
+    }
+    return { c, total };
+  }, [api.entries, api.now, month]);
+
+  // Cancelled posts for the account(s) on screen, any month.
+  const cancelledIds = useMemo(
+    () =>
+      api.entries
+        .filter((e) => e.status === "CANCELLED" && (allAccounts || accountKey(e) === accountFilter))
+        .map((e) => e.id),
+    [api.entries, allAccounts, accountFilter],
+  );
+  const clearCancelled = () => {
+    const n = cancelledIds.length;
+    if (!window.confirm(`Delete ${n} cancelled post${n === 1 ? "" : "s"} from history? This can't be undone.`)) return;
+    void api.clearCancelled(cancelledIds);
+  };
 
   const days = monthGrid(month);
   const today = new Date();
@@ -59,6 +92,8 @@ export function CalendarView() {
 
   return (
     <div className="space-y-5">
+      <AccountBar refs={refs} value={accountFilter} onChange={onAccount} counts={monthCounts.c} total={monthCounts.total} />
+
       {/* Needs attention */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <AttentionCard
@@ -73,7 +108,7 @@ export function CalendarView() {
         <AttentionCard
           icon={Inbox}
           tone="text-cyan"
-          label="Drafts to finish"
+          label="Drafts to post"
           hint="add sound & publish"
           count={counts.draft ?? 0}
           active={stateFilter === "draft"}
@@ -121,24 +156,16 @@ export function CalendarView() {
             <ChevronRight size={16} />
           </Button>
           <div className="ml-auto flex items-center gap-2">
+            {cancelledIds.length > 0 && (
+              <Button size="sm" variant="ghost" onClick={clearCancelled} title="Delete every cancelled post from history">
+                <Trash2 size={13} /> Clear cancelled ({cancelledIds.length})
+              </Button>
+            )}
             {stateFilter && (
               <Button size="sm" variant="ghost" onClick={() => setStateFilter(null)}>
                 Clear filter
               </Button>
             )}
-            <select
-              value={accountFilter}
-              onChange={(e) => setAccountFilter(e.target.value)}
-              className="h-8 rounded-lg border border-line bg-sunken px-2 text-sm outline-none focus:border-cyan"
-              aria-label="Filter by account"
-            >
-              <option value="all">All accounts</option>
-              {accounts.map((a) => (
-                <option key={a.openId} value={a.openId}>
-                  {a.username ? `@${a.username}` : a.displayName}
-                </option>
-              ))}
-            </select>
           </div>
         </div>
 
@@ -174,23 +201,7 @@ export function CalendarView() {
                 >
                   {day.getDate()}
                 </span>
-                {items.slice(0, 3).map(({ e, d }) => (
-                  <span
-                    key={e.id}
-                    title={`${d.label} · ${e.label}`}
-                    className={clsx(
-                      "flex items-center gap-1 truncate rounded px-1 py-0.5 text-[10.5px] leading-tight",
-                      d.state === "cancelled" ? "text-muted line-through" : "bg-sunken",
-                    )}
-                  >
-                    <span className={clsx("size-1.5 shrink-0 rounded-full", d.dot)} />
-                    <span className="tabular-nums text-muted">
-                      {d.when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-                    </span>
-                    <span className="truncate">{e.accountName ?? e.label}</span>
-                  </span>
-                ))}
-                {items.length > 3 && <span className="px-1 text-[10.5px] text-muted">+{items.length - 3} more</span>}
+                {allAccounts ? <AccountCellRows refs={refs} items={items} /> : <PostCellRows items={items} />}
               </button>
             );
           })}
@@ -224,13 +235,88 @@ export function CalendarView() {
           </span>
         </h2>
         {api.error && <p className="selectable text-sm text-bad">{api.error}</p>}
-        {dayItems.map(({ e }) => (
-          <HistoryRow key={e.id} entry={e} api={api} onOpen={() => setOpenId(e.id)} compact />
-        ))}
+        {allAccounts
+          ? groupByAccount(refs, dayItems, (i) => i.e).map(({ ref, items }) => (
+              <div key={ref.id} className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => onAccount(ref.id)}
+                  className="flex items-center gap-2 pt-1 text-[13px] font-medium hover:text-text"
+                  title="Show only this account"
+                >
+                  <AccountAvatar account={ref} size={22} />
+                  {ref.handle}
+                  <span className="font-normal text-muted">· {items.length}</span>
+                </button>
+                <div className="ml-2.5 space-y-2 border-l border-line pl-4">
+                  {items.map(({ e }) => (
+                    <HistoryRow key={e.id} entry={e} api={api} onOpen={() => setOpenId(e.id)} compact />
+                  ))}
+                </div>
+              </div>
+            ))
+          : dayItems.map(({ e }) => <HistoryRow key={e.id} entry={e} api={api} onOpen={() => setOpenId(e.id)} compact />)}
       </section>
 
       {opened && <PostDetail entry={opened} now={api.now} onClose={() => setOpenId(null)} />}
     </div>
+  );
+}
+
+type CellItem = { e: HistoryEntry; d: DerivedState };
+
+/** Most urgent first: a cell shows the worst state of an account's posts that day. */
+const SEVERITY: PostState[] = ["failed", "missed", "delayed", "draft", "sending", "upcoming", "published", "posted", "cancelled"];
+
+/** All-accounts cell: one line per account with how many posts it has that day. */
+function AccountCellRows({ refs, items }: { refs: AccountRef[]; items: CellItem[] }) {
+  const groups = groupByAccount(refs, items, (i) => i.e);
+  return (
+    <>
+      {groups.slice(0, 4).map(({ ref, items: own }) => {
+        const worst = own.reduce((w, i) => (SEVERITY.indexOf(i.d.state) < SEVERITY.indexOf(w.d.state) ? i : w));
+        const live = own.filter((i) => i.d.state !== "cancelled").length;
+        return (
+          <span
+            key={ref.id}
+            title={`${ref.handle}: ${own.length} post${own.length === 1 ? "" : "s"}`}
+            className={clsx("flex items-center gap-1 rounded bg-sunken px-1 py-0.5 text-[10.5px] leading-tight", live === 0 && "text-muted line-through")}
+          >
+            <span className={clsx("size-1.5 shrink-0 rounded-full", worst.d.dot)} />
+            <AccountAvatar account={ref} size={13} />
+            <span className="min-w-0 flex-1 truncate">{ref.handle}</span>
+            <span className="tabular-nums text-muted">{own.length}</span>
+          </span>
+        );
+      })}
+      {groups.length > 4 && <span className="px-1 text-[10.5px] text-muted">+{groups.length - 4} accounts</span>}
+    </>
+  );
+}
+
+/** Single-account cell: each post with its time. */
+function PostCellRows({ items }: { items: CellItem[] }) {
+  return (
+    <>
+      {items.slice(0, 3).map(({ e, d }) => (
+        <span
+          key={e.id}
+          title={`${d.label} · ${e.label}`}
+          className={clsx(
+            "flex items-center gap-1 truncate rounded px-1 py-0.5 text-[10.5px] leading-tight",
+            d.state === "cancelled" ? "text-muted line-through" : "bg-sunken",
+          )}
+        >
+          <span className={clsx("size-1.5 shrink-0 rounded-full", d.dot)} />
+          <PlatformIcon platform={platformOf(e)} size={10} className="shrink-0" />
+          <span className="tabular-nums text-muted">
+            {d.when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+          </span>
+          <span className="truncate">{e.label}</span>
+        </span>
+      ))}
+      {items.length > 3 && <span className="px-1 text-[10.5px] text-muted">+{items.length - 3} more</span>}
+    </>
   );
 }
 

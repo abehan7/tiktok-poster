@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, ExternalLink, Plus } from "lucide-react";
-import type { Account, Appearance, SettingsUpdate, TestResult } from "@shared/contract";
+import { Check, Copy, ExternalLink, KeyRound, Plus } from "lucide-react";
+import type { Appearance, SettingsUpdate, TestResult } from "@shared/contract";
 import { Button, Card, Field, Input, Notice, Segmented, Toggle } from "@renderer/components/ui";
 import { errorMessage, poster } from "@renderer/lib/api";
 import { Avatar } from "@renderer/components/Avatar";
+import { PlatformIcon } from "@renderer/components/Platform";
 import { useAppState } from "@renderer/lib/app-state";
 
 export function SettingsView() {
@@ -27,6 +28,8 @@ export function SettingsView() {
       r2PublicBaseUrl: settings.r2PublicBaseUrl,
       r2KeyPrefix: settings.r2KeyPrefix,
       carouselFolder: settings.carouselFolder,
+      igAppId: settings.igAppId,
+      igRedirectUri: settings.igRedirectUri,
     });
   }, [settings]);
 
@@ -42,7 +45,7 @@ export function SettingsView() {
     try {
       const next = await poster.saveSettings(form);
       setSettings(next);
-      setForm((f) => ({ ...f, clientSecret: "", r2SecretAccessKey: "" }));
+      setForm((f) => ({ ...f, clientSecret: "", r2SecretAccessKey: "", igAppSecret: "" }));
       setSaved(true);
       // Switching between mock and live changes which account is connected.
       if (next.mockMode !== settings!.mockMode || next.clientKey !== settings!.clientKey) await reload();
@@ -65,6 +68,7 @@ export function SettingsView() {
   return (
     <div className="max-w-3xl space-y-5">
       <AccountsCard />
+      <InstagramAccountsCard />
 
       <Card className="space-y-4">
         <Header
@@ -124,10 +128,43 @@ export function SettingsView() {
 
       <Card className="space-y-4">
         <Header
-          title="Cloudflare R2 (carousel images)"
+          title="Instagram app"
+          link="https://developers.facebook.com/apps"
+          linkLabel="Meta App Dashboard"
+          subtitle="Only needed for “Log in”. Pasted tokens work without it. Create a Business app, add the Instagram use case (API setup with Instagram login), and copy its Instagram app ID and secret."
+        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Instagram app ID">
+            <Input value={form.igAppId ?? ""} onChange={(e) => set({ igAppId: e.target.value })} spellCheck={false} />
+          </Field>
+          <Field label="Instagram app secret" hint={settings.hasIgAppSecret ? "Saved. Leave blank to keep it." : undefined}>
+            <Input
+              type="password"
+              value={form.igAppSecret ?? ""}
+              placeholder={settings.hasIgAppSecret ? "••••••••" : ""}
+              onChange={(e) => set({ igAppSecret: e.target.value })}
+            />
+          </Field>
+        </div>
+        <Field
+          label="Redirect URI"
+          hint="Add this exact URI under Business login settings → OAuth redirect URIs. The login window catches it before it loads, so it doesn't have to be a real page."
+        >
+          <Input
+            value={form.igRedirectUri ?? ""}
+            onChange={(e) => set({ igRedirectUri: e.target.value })}
+            className="selectable font-mono text-xs"
+            spellCheck={false}
+          />
+        </Field>
+      </Card>
+
+      <Card className="space-y-4">
+        <Header
+          title="Cloudflare R2 (carousel images, Reels)"
           link="https://dash.cloudflare.com/?to=/:account/r2/overview"
           linkLabel="R2 dashboard"
-          subtitle="TikTok pulls photos from a URL. Use a bucket with a custom domain, and verify that domain (or URL prefix) in the TikTok portal."
+          subtitle="TikTok and Instagram pull photos (and Instagram pulls Reels) from a public URL. For TikTok, verify the domain or URL prefix in the TikTok portal."
         />
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Account ID">
@@ -222,7 +259,9 @@ function AccountsCard() {
     <Card className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-[15px] font-semibold">TikTok accounts</h2>
+          <h2 className="flex items-center gap-2 text-[15px] font-semibold">
+            <PlatformIcon platform="tiktok" size={16} /> TikTok accounts
+          </h2>
           <p className="mt-0.5 text-xs leading-relaxed text-muted">
             TikTok doesn't share account emails with apps, so type which email or ID each account logs in with.
             To add another account, sign in to it in your browser first. Sandbox apps also need it under Target Users.
@@ -246,7 +285,13 @@ function AccountsCard() {
           {accounts.map((a) => (
             <AccountRow
               key={a.openId}
-              account={a}
+              name={a.displayName}
+              handle={`${a.username ? `@${a.username}` : "@handle unavailable"} · connected ${new Date(a.connectedAt).toLocaleDateString()}`}
+              id={a.openId}
+              avatarUrl={a.avatarUrl}
+              note={a.note}
+              problem={a.loginProblem}
+              reconnect={{ label: "Reconnect", onClick: () => void addAccount() }}
               active={a.openId === active?.openId}
               onSelect={() => selectAccount(a.openId)}
               onDisconnect={() => disconnect(a.openId)}
@@ -260,24 +305,38 @@ function AccountsCard() {
 }
 
 function AccountRow({
-  account: a,
+  name,
+  handle,
+  id,
+  avatarUrl,
+  note,
+  problem,
+  reconnect,
   active,
   onSelect,
   onDisconnect,
   onSaveLogin,
 }: {
-  account: Account;
+  name: string;
+  /** Second line, e.g. "@handle · connected 10/8/2026". */
+  handle: string;
+  id: string;
+  avatarUrl: string | null;
+  note: string;
+  /** Why the saved login no longer works, if it doesn't. */
+  problem: string | null;
+  reconnect: { label: string; onClick(): void };
   active: boolean;
   onSelect(): void;
   onDisconnect(): Promise<void>;
   onSaveLogin(login: string): Promise<void>;
 }) {
-  const [login, setLogin] = useState(a.note);
+  const [login, setLogin] = useState(note);
   const [saved, setSaved] = useState(false);
-  useEffect(() => setLogin(a.note), [a.note]);
+  useEffect(() => setLogin(note), [note]);
 
   async function commit() {
-    if (login.trim() === a.note) return;
+    if (login.trim() === note) return;
     await onSaveLogin(login);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
@@ -286,23 +345,26 @@ function AccountRow({
   return (
     <li className="space-y-3 p-3">
       <div className="flex items-center gap-3">
-        <Avatar account={a} size={40} />
+        <Avatar account={{ avatarUrl }} size={40} />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-2 truncate text-sm font-medium">
-            {a.displayName}
+            {name}
             {active && (
               <span className="rounded-full bg-accent/15 px-1.5 text-[10px] font-semibold text-accent">POSTING</span>
             )}
+            {problem && <span className="rounded-full bg-bad/15 px-1.5 text-[10px] font-semibold text-bad">LOGIN DEAD</span>}
           </p>
-          <p className="truncate text-xs text-muted">
-            {a.username ? `@${a.username}` : "@handle unavailable"} · connected{" "}
-            {new Date(a.connectedAt).toLocaleDateString()}
-          </p>
-          <p className="selectable truncate font-mono text-[10px] text-muted/70" title="TikTok open ID for this app">
-            {a.openId}
+          <p className="truncate text-xs text-muted">{handle}</p>
+          <p className="selectable truncate font-mono text-[10px] text-muted/70" title="Account ID for this app">
+            {id}
           </p>
         </div>
         <div className="flex shrink-0 gap-1">
+          {problem && (
+            <Button size="sm" variant="primary" onClick={reconnect.onClick}>
+              {reconnect.label}
+            </Button>
+          )}
           {!active && (
             <Button size="sm" variant="ghost" onClick={onSelect}>
               Post as this
@@ -313,6 +375,11 @@ function AccountRow({
           </Button>
         </div>
       </div>
+      {problem && (
+        <p className="ml-[52px] rounded-lg bg-bad/10 px-3 py-2 text-xs leading-relaxed text-bad">
+          {problem} Scheduled posts for this account will fail until it's reconnected.
+        </p>
+      )}
       <div className="flex items-center gap-3 pl-[52px]">
         <span className="w-28 shrink-0 text-xs text-muted">Login email / ID</span>
         <Input
@@ -321,13 +388,109 @@ function AccountRow({
           onBlur={() => void commit()}
           onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
           placeholder="e.g. me@gmail.com, or “Google login”"
-          aria-label={`Login email or ID for ${a.displayName}`}
-          className={!a.note ? "border-warn/60" : undefined}
+          aria-label={`Login email or ID for ${name}`}
+          className={!note ? "border-warn/60" : undefined}
         />
         <span className="w-16 shrink-0 text-[11px]">
-          {saved ? <span className="text-ok">Saved</span> : !a.note ? <span className="text-warn">Not set</span> : null}
+          {saved ? <span className="text-ok">Saved</span> : !note ? <span className="text-warn">Not set</span> : null}
         </span>
       </div>
     </li>
+  );
+}
+
+/** Connected Instagram professional accounts. */
+function InstagramAccountsCard() {
+  const { igAccounts, igAccount: active, igConnecting, igError, addIgAccount, addIgToken, disconnectIg, setIgAccounts, selectIgAccount } =
+    useAppState();
+  const [pasting, setPasting] = useState(false);
+  const [token, setToken] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [pasteError, setPasteError] = useState<string | null>(null);
+
+  async function addToken() {
+    setAdding(true);
+    setPasteError(null);
+    try {
+      await addIgToken(token);
+      setToken("");
+      setPasting(false);
+    } catch (err) {
+      setPasteError(errorMessage(err));
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  return (
+    <Card className="space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="flex items-center gap-2 text-[15px] font-semibold">
+            <PlatformIcon platform="instagram" size={16} /> Instagram accounts
+          </h2>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted">
+            Professional (Creator or Business) accounts only. Log in (needs the Instagram app keys below), or paste a token
+            from the Meta App Dashboard. Tokens last 60 days and renew themselves while you use the app.
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Button size="sm" onClick={() => setPasting((v) => !v)} className="whitespace-nowrap">
+            <KeyRound size={14} /> Paste token
+          </Button>
+          <Button size="sm" onClick={() => void addIgAccount()} disabled={igConnecting} className="whitespace-nowrap">
+            <Plus size={14} /> {igConnecting ? "Waiting for login…" : "Log in"}
+          </Button>
+        </div>
+      </div>
+
+      {pasting && (
+        <div className="space-y-2 rounded-lg bg-sunken p-3">
+          <div className="flex gap-2">
+            <Input
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && token && void addToken()}
+              placeholder="IGAA…"
+              aria-label="Instagram access token"
+              autoFocus
+            />
+            <Button variant="primary" onClick={() => void addToken()} disabled={!token || adding}>
+              {adding ? "Checking…" : "Add"}
+            </Button>
+          </div>
+          <p className="text-xs leading-relaxed text-muted">
+            In the Meta App Dashboard: your app → Instagram → API setup with Instagram login → Generate access tokens → Add
+            account, then Generate token.
+          </p>
+          {pasteError && <Notice tone="bad">{pasteError}</Notice>}
+        </div>
+      )}
+      {igError && <Notice tone="bad">{igError}</Notice>}
+
+      {igAccounts.length === 0 ? (
+        <p className="rounded-lg bg-sunken px-3 py-4 text-center text-sm text-muted">No Instagram accounts connected yet.</p>
+      ) : (
+        <ul className="divide-y divide-line rounded-lg border border-line">
+          {igAccounts.map((a) => (
+            <AccountRow
+              key={a.id}
+              name={a.displayName}
+              handle={`@${a.username} · ${a.accountType === "BUSINESS" ? "Business" : "Creator"} · ${a.loginProblem ? "token refused by Instagram" : `token good until ${new Date(a.expiresAt).toLocaleDateString()}`}`}
+              id={a.id}
+              avatarUrl={a.avatarUrl}
+              note={a.note}
+              problem={a.loginProblem}
+              reconnect={{ label: "Paste new token", onClick: () => setPasting(true) }}
+              active={a.id === active?.id}
+              onSelect={() => selectIgAccount(a.id)}
+              onDisconnect={() => disconnectIg(a.id)}
+              onSaveLogin={async (login) => setIgAccounts(await poster.setIgAccountNote(a.id, login))}
+            />
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }

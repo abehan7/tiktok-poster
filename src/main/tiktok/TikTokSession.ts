@@ -1,13 +1,18 @@
 import type { Account, CreatorInfo } from "@shared/contract";
+import { describeTikTokError } from "@shared/tiktokErrors";
 import type { SettingsStore } from "../store/settings";
 import type { StoredAccount, TokenStore } from "../store/tokens";
 import { LiveTikTokGateway } from "./LiveTikTokGateway";
 import { MockTikTokGateway } from "./MockTikTokGateway";
-import type { TikTokGateway, TokenGrant } from "./TikTokGateway";
+import { TikTokError, type TikTokGateway, type TokenGrant } from "./TikTokGateway";
 
 const MOCK_KEY = "mock";
 /** Refresh a little before expiry so a long upload doesn't straddle it. */
 const REFRESH_MARGIN_MS = 10 * 60_000;
+/** How long a login check stays fresh before listing the accounts checks again. */
+const RECHECK_MS = 10 * 60_000;
+/** Error codes that mean the login itself is gone, so only connecting again helps. */
+const DEAD_LOGIN_CODES = ["access_token_invalid", "auth_removed", "invalid_grant", "scope_not_authorized"];
 
 /**
  * Owns the connected accounts: picks the live or mock gateway from settings,
@@ -15,8 +20,8 @@ const REFRESH_MARGIN_MS = 10 * 60_000;
  */
 export class TikTokSession {
   private readonly mock = new MockTikTokGateway();
-  /** Profiles re-fetched this launch (TikTok avatar URLs are signed and expire). */
-  private readonly refreshed = new Set<string>();
+  /** When each account's login was last checked (this also re-fetches the profile; avatar URLs are signed and expire). */
+  private readonly checkedAt = new Map<string, number>();
 
   constructor(
     private readonly settings: SettingsStore,
@@ -58,7 +63,7 @@ export class TikTokSession {
       connectedAt: existing?.connectedAt ?? new Date().toISOString(),
     };
     this.tokens.put(this.appKey(), stored);
-    this.refreshed.add(tokens.openId);
+    this.checkedAt.set(tokens.openId, Date.now());
     return toAccount(stored);
   }
 
@@ -66,28 +71,46 @@ export class TikTokSession {
     const a = this.tokens.get(this.appKey(), openId);
     if (a) await this.gateway().revoke(a.tokens.accessToken).catch(() => undefined);
     this.tokens.remove(this.appKey(), openId);
-    this.refreshed.delete(openId);
+    this.checkedAt.delete(openId);
   }
 
-  /** Connected accounts whose login hasn't expired, oldest first. */
+  /** Connected accounts whose login hasn't expired, oldest first. Checks each login (and refreshes its profile) every few minutes. */
   async listAccounts(): Promise<Account[]> {
-    const live = this.tokens.list(this.appKey()).filter((a) => a.tokens.refreshExpiresAt > Date.now());
-    // Refresh names/avatars once per launch; a failure just keeps the cached profile.
+    const now = Date.now();
+    const live = this.tokens.list(this.appKey()).filter((a) => a.tokens.refreshExpiresAt > now);
     await Promise.all(
       live
-        .filter((a) => !this.refreshed.has(a.tokens.openId))
+        .filter((a) => now - (this.checkedAt.get(a.tokens.openId) ?? 0) > RECHECK_MS)
         .map(async (a) => {
-          this.refreshed.add(a.tokens.openId);
+          const id = a.tokens.openId;
+          this.checkedAt.set(id, now);
           try {
-            const profile = await this.profile(await this.accessToken(a.tokens.openId), a.tokens.scopes);
-            this.tokens.put(this.appKey(), { ...this.tokens.get(this.appKey(), a.tokens.openId)!, ...profile });
-            Object.assign(a, profile);
-          } catch {
-            // offline or token revoked — show what we have
+            const profile = await this.profile(await this.accessToken(id), a.tokens.scopes);
+            Object.assign(a, this.patch(id, { ...profile, loginProblem: null }));
+          } catch (err) {
+            // A refused login is flagged on the account; offline just keeps the cached profile.
+            const problem = deadLoginMessage(err);
+            if (problem) Object.assign(a, this.patch(id, { loginProblem: problem }));
           }
         }),
     );
     return live.sort((x, y) => x.connectedAt.localeCompare(y.connectedAt)).map(toAccount);
+  }
+
+  /** Records what a post learned about the login: an error flags a refused login, no error clears the flag. */
+  noteLogin(openId: string, err?: unknown): void {
+    const a = this.tokens.get(this.appKey(), openId);
+    if (!a) return;
+    const problem = err === undefined ? null : deadLoginMessage(err);
+    if (err !== undefined && !problem) return;
+    this.checkedAt.set(openId, Date.now());
+    if ((a.loginProblem ?? null) !== problem) this.patch(openId, { loginProblem: problem });
+  }
+
+  private patch(openId: string, patch: Partial<StoredAccount>): StoredAccount {
+    const next = { ...this.tokens.get(this.appKey(), openId)!, ...patch };
+    this.tokens.put(this.appKey(), next);
+    return next;
   }
 
   storedAccount(openId: string): StoredAccount | null {
@@ -153,5 +176,10 @@ function toAccount(a: StoredAccount): Account {
     note: a.note ?? "",
     scopes: a.tokens.scopes,
     connectedAt: a.connectedAt,
+    loginProblem: a.loginProblem ?? null,
   };
+}
+
+function deadLoginMessage(err: unknown): string | null {
+  return err instanceof TikTokError && DEAD_LOGIN_CODES.includes(err.code) ? describeTikTokError(err.code, err.message) : null;
 }

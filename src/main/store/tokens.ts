@@ -19,6 +19,8 @@ export interface StoredAccount {
   avatarUrl: string | null;
   note?: string;
   connectedAt: string;
+  /** Set when TikTok refused the login (revoked, refresh token rejected…); cleared when it works again. */
+  loginProblem?: string | null;
 }
 
 interface StoredTokens {

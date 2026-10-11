@@ -3,6 +3,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 import type { CarouselFolder, PosterApi } from "@shared/contract";
 import { isAllowed, toLocalFile } from "./media";
+import type { InstagramSession } from "./instagram/InstagramSession";
+import type { InstagramPostingService } from "./posting/InstagramPostingService";
 import type { PostingService } from "./posting/PostingService";
 import type { Scheduler } from "./posting/Scheduler";
 import { createImageHost } from "./storage/ImageHost";
@@ -22,11 +24,13 @@ interface Deps {
   session: TikTokSession;
   history: HistoryStore;
   posting: PostingService;
+  instagram: InstagramSession;
+  igPosting: InstagramPostingService;
   scheduler: Scheduler;
 }
 
 function readCarouselFolder(dir: string): CarouselFolder {
-  // Slides are numbered images; "_"-prefixed files are tubelingo-carousel debug sheets.
+  // Slides are numbered images; "_"-prefixed files (e.g. debug sheets) are skipped.
   const images = readdirSync(dir)
     .filter((f) => IMAGE_EXTS.includes(extname(f).toLowerCase()) && !f.startsWith("_") && !f.startsWith("."))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
@@ -89,6 +93,15 @@ export function registerIpc(d: Deps): void {
     },
     getCreatorInfo: (openId) => d.session.creatorInfo(openId),
 
+    listIgAccounts: () => d.instagram.listAccounts(),
+    connectInstagram: () => d.instagram.connect(),
+    addInstagramToken: (token) => d.instagram.addToken(token),
+    disconnectInstagram: async (id) => d.instagram.disconnect(id),
+    setIgAccountNote: async (id, note) => {
+      d.instagram.setNote(id, note);
+      return d.instagram.listAccounts();
+    },
+
     pickVideo: async () => {
       const r = await dialog.showOpenDialog(d.window()!, {
         properties: ["openFile"],
@@ -134,6 +147,22 @@ export function registerIpc(d: Deps): void {
       assertPicked(input.filePaths);
       return d.scheduler.schedulePhotos(input, at);
     },
+    postIgPhotos: async (input) => {
+      assertPicked(input.filePaths);
+      return d.igPosting.postPhotos(input);
+    },
+    postIgVideo: async (input) => {
+      assertPicked([input.filePath]);
+      return d.igPosting.postVideo(input);
+    },
+    scheduleIgPhotos: async (input, at) => {
+      assertPicked(input.filePaths);
+      return d.scheduler.scheduleIgPhotos(input, at);
+    },
+    scheduleIgVideo: async (input, at) => {
+      assertPicked([input.filePath]);
+      return d.scheduler.scheduleIgVideo(input, at);
+    },
     reschedule: async (id, at) => d.scheduler.reschedule(id, at),
     cancelScheduled: (id) => d.scheduler.cancel(id),
     postScheduledNow: (id) => d.scheduler.postNow(id),
@@ -151,13 +180,20 @@ export function registerIpc(d: Deps): void {
       }
       return d.scheduler.decorate(entries);
     },
-    refreshStatus: (id) => d.posting.refresh(id),
+    refreshStatus: (id) => (d.history.get(id)?.platform === "instagram" ? d.igPosting.refresh(id) : d.posting.refresh(id)),
     removeHistory: async (id) => d.history.remove(id),
+    clearCancelled: async (ids) => {
+      // Only ever cancelled ones, whatever the renderer sends (their stashed files went at cancel time).
+      const wanted = new Set(ids);
+      const gone = d.history.list().filter((e) => wanted.has(e.id) && e.status === "CANCELLED").map((e) => e.id);
+      d.history.removeMany(gone);
+      return gone.length;
+    },
     setFinished: async (id, finished) => {
       const e = d.history.get(id);
       if (!e) throw new Error("That post is no longer in the history.");
-      if (finished && e.status !== "SEND_TO_USER_INBOX") throw new Error("Only drafts delivered to TikTok can be marked published.");
-      return d.scheduler.decorate([d.history.update(id, { finishedAt: finished ? new Date().toISOString() : null })])[0];
+      if (finished && e.status !== "SEND_TO_USER_INBOX") throw new Error("Only drafts delivered to TikTok can be marked posted.");
+      return d.scheduler.decorate([d.posting.update(id, { finishedAt: finished ? new Date().toISOString() : null })])[0];
     },
     openExternal: async (url) => {
       if (/^https:\/\//.test(url)) await shell.openExternal(url);

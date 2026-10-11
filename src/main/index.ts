@@ -1,11 +1,16 @@
 import { app, BrowserWindow, dialog, Menu, nativeTheme, shell, systemPreferences, type MenuItemConstructorOptions } from "electron";
 import { join } from "node:path";
-import type { View } from "@shared/contract";
+import type { HistoryEntry, Progress, View } from "@shared/contract";
 import { accentHex, registerIpc } from "./ipc";
+import { InstagramSession } from "./instagram/InstagramSession";
 import { handleMediaProtocol, registerMediaScheme } from "./media";
+import { InstagramPostingService } from "./posting/InstagramPostingService";
 import { PostingService } from "./posting/PostingService";
+import { DraftNotifier } from "./posting/DraftNotifier";
+import { ImportInbox } from "./posting/ImportInbox";
 import { Scheduler } from "./posting/Scheduler";
 import { HistoryStore } from "./store/history";
+import { IgTokenStore } from "./store/igTokens";
 import { SettingsStore } from "./store/settings";
 import { TokenStore } from "./store/tokens";
 import { TikTokSession } from "./tiktok/TikTokSession";
@@ -72,6 +77,7 @@ function buildMenu() {
     {
       label: "File",
       submenu: [
+        { label: "Dashboard", accelerator: "Cmd+0", click: () => navigate("dashboard") },
         { label: "New Carousel", accelerator: "Cmd+1", click: () => navigate("carousel") },
         { label: "New Video", accelerator: "Cmd+2", click: () => navigate("video") },
         { label: "Calendar", accelerator: "Cmd+3", click: () => navigate("calendar") },
@@ -104,15 +110,24 @@ app.whenReady().then(() => {
   const session = new TikTokSession(settings, new TokenStore());
   // `scheduler` is assigned right below; events only fire after that.
   let scheduler: Scheduler;
-  const posting = new PostingService(session, settings, history, {
-    progress: (p) => win?.webContents.send("progress", p),
-    history: (e) => win?.webContents.send("history", scheduler.decorate([e])[0]),
-  });
-  scheduler = new Scheduler(posting, history);
+  const notifier = new DraftNotifier(history, () => win);
+  const events = {
+    progress: (p: Progress) => win?.webContents.send("progress", p),
+    history: (e: HistoryEntry) => {
+      notifier.onHistory(e);
+      win?.webContents.send("history", scheduler.decorate([e])[0]);
+    },
+  };
+  const posting = new PostingService(session, settings, history, events);
+  const instagram = new InstagramSession(settings, new IgTokenStore(), () => win);
+  const igPosting = new InstagramPostingService(instagram, settings, history, events);
+  scheduler = new Scheduler(posting, igPosting, history);
 
-  registerIpc({ window: () => win, settings, session, history, posting, scheduler });
+  registerIpc({ window: () => win, settings, session, history, posting, instagram, igPosting, scheduler });
   posting.resumePolling();
+  igPosting.resumePolling();
   scheduler.start();
+  new ImportInbox(scheduler, session).start();
 
   // Scheduled posts only go out while the app runs, so ask before quitting with any pending.
   let quitConfirmed = false;

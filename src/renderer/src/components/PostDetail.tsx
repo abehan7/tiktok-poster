@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Film, Images, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Film, Images, RotateCcw, X } from "lucide-react";
 import type { HistoryEntry } from "@shared/contract";
 import { describeTikTokError } from "@shared/tiktokErrors";
 import { poster } from "@renderer/lib/api";
 import { derive, lateText } from "@renderer/lib/post-state";
 import { formatWhen } from "./SchedulePicker";
+import { PlatformIcon, platformOf } from "./Platform";
 import { PRIVACY_LABELS } from "./PostOptions";
 
 /** Full view of one post: slides or video, caption, and where/when it went. */
@@ -15,6 +16,7 @@ export function PostDetail({ entry: e, now, onClose }: { entry: HistoryEntry; no
   const [index, setIndex] = useState(c?.coverIndex ?? 0);
   const [broken, setBroken] = useState<Set<string>>(new Set());
   const d = derive(e, now);
+  const instagram = platformOf(e) === "instagram";
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
@@ -99,10 +101,30 @@ export function PostDetail({ entry: e, now, onClose }: { entry: HistoryEntry; no
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex items-start gap-3 border-b border-line px-5 py-4">
             <div className="min-w-0 flex-1">
-              <h2 className="truncate text-base font-semibold">{e.label}</h2>
+              <h2 className="flex items-center gap-2 truncate text-base font-semibold">
+                <PlatformIcon platform={platformOf(e)} size={16} className="shrink-0" />
+                <span className="truncate">{e.label}</span>
+              </h2>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
                 <span className={clsx("rounded-full px-2 py-0.5 font-medium", d.tone)}>{d.label}</span>
                 {d.lateMin !== null && <span className="text-warn">{lateText(d.lateMin)}</span>}
+                {d.state === "draft" && (
+                  <button
+                    onClick={() => void poster.setFinished(e.id, true)}
+                    className="flex items-center gap-1 rounded-full bg-ok/15 px-2 py-0.5 font-medium text-ok hover:bg-ok/25"
+                  >
+                    <Check size={12} /> Mark posted
+                  </button>
+                )}
+                {d.state === "published" && (
+                  <button
+                    onClick={() => void poster.setFinished(e.id, false)}
+                    className="flex items-center gap-1 rounded-full px-2 py-0.5 hover:bg-sunken hover:text-text"
+                    title="Undo: back to draft uploaded"
+                  >
+                    <RotateCcw size={12} /> Undo
+                  </button>
+                )}
               </div>
             </div>
             <button onClick={onClose} className="rounded-lg p-1.5 text-muted hover:bg-sunken hover:text-text" aria-label="Close">
@@ -116,23 +138,36 @@ export function PostDetail({ entry: e, now, onClose }: { entry: HistoryEntry; no
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
               <Row label="Account">{e.accountName ?? "—"}</Row>
               <Row label="Type">
-                {e.kind === "video" ? "Video" : `Carousel · ${images.length || "?"} slides`} ·{" "}
-                {e.mode === "DIRECT" ? "Direct post" : "Draft to inbox"}
+                {instagram ? (
+                  e.kind === "video" ? "Instagram Reel" : images.length === 1 ? "Instagram photo" : `Instagram carousel · ${images.length || "?"} slides`
+                ) : (
+                  <>
+                    {e.kind === "video" ? "Video" : `Carousel · ${images.length || "?"} slides`} ·{" "}
+                    {e.mode === "DIRECT" ? "Direct post" : "Draft to inbox"}
+                  </>
+                )}
               </Row>
               {c?.privacyLevel && <Row label="Who can view">{PRIVACY_LABELS[c.privacyLevel]}</Row>}
               {e.kind === "photo" && e.mode === "DIRECT" && <Row label="Music">{c?.autoAddMusic ? "Auto (TikTok picks)" : "None"}</Row>}
               {e.scheduledAt && <Row label="Scheduled for">{formatWhen(e.scheduledAt)}</Row>}
               {e.sentAt && <Row label="Sent">{formatWhen(e.sentAt)}</Row>}
               {!e.scheduledAt && !e.sentAt && <Row label="Created">{formatWhen(e.createdAt)}</Row>}
-              {e.finishedAt && <Row label="Marked published">{formatWhen(e.finishedAt)}</Row>}
+              {e.finishedAt && <Row label="Marked posted">{formatWhen(e.finishedAt)}</Row>}
               {e.publishId && (
-                <Row label="Publish ID">
+                <Row label={instagram ? "Container ID" : "Publish ID"}>
                   <span className="font-mono text-xs">{e.publishId}</span>
                 </Row>
               )}
               {e.postIds[0] && (
-                <Row label="Post ID">
+                <Row label={instagram ? "Media ID" : "Post ID"}>
                   <span className="font-mono text-xs">{e.postIds[0]}</span>
+                </Row>
+              )}
+              {e.permalink && (
+                <Row label="Link">
+                  <button onClick={() => poster.openExternal(e.permalink!)} className="flex items-center gap-1 text-left hover:underline">
+                    {e.permalink.replace(/^https:\/\/(www\.)?/, "")} <ExternalLink size={12} />
+                  </button>
                 </Row>
               )}
             </dl>
@@ -152,7 +187,7 @@ export function PostDetail({ entry: e, now, onClose }: { entry: HistoryEntry; no
                 </p>
               </section>
             )}
-            {!caption && c && <p className="text-sm text-muted">No caption. Drafts are captioned in TikTok.</p>}
+            {!caption && c && <p className="text-sm text-muted">{instagram ? "No caption." : "No caption. Drafts are captioned in TikTok."}</p>}
 
             {d.state === "draft" && (
               <p className="rounded-lg bg-cyan/10 px-3 py-2 text-sm text-cyan">

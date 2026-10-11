@@ -21,6 +21,7 @@ const MESSAGES: Record<string, string> = {
   photo_pull_failed: "TikTok couldn't download the images. Is the R2 URL verified in the TikTok portal?",
   publish_cancelled: "The post was cancelled.",
   auth_removed: "The app's access was removed. Connect again.",
+  invalid_grant: "TikTok no longer accepts this login (access was removed or it ran out). Connect the account again.",
   spam_risk_text: "TikTok flagged the caption text.",
   spam_risk: "TikTok flagged this post as spam risk.",
   internal: "TikTok had an internal error. Try again.",

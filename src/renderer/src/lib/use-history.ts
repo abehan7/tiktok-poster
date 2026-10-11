@@ -48,6 +48,16 @@ export function useHistory() {
       await poster.removeHistory(id);
       setEntries((cur) => cur.filter((x) => x.id !== id));
     },
+    clearCancelled: async (ids: string[]) => {
+      setError(null);
+      try {
+        await poster.clearCancelled(ids);
+        const gone = new Set(ids);
+        setEntries((cur) => cur.filter((x) => !(gone.has(x.id) && x.status === "CANCELLED")));
+      } catch (err) {
+        setError(errorMessage(err));
+      }
+    },
     postNow: (id: string) => act(id, () => poster.postScheduledNow(id)),
     cancel: (id: string) => act(id, () => poster.cancelScheduled(id)),
     reschedule: (id: string, at: string) => act(id, () => poster.reschedule(id, at)),

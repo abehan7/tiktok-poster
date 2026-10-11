@@ -1,4 +1,4 @@
-appId: dev.hanjungyu.tiktokposter
+appId: io.github.abehan7.tiktokposter
 productName: TikTok Poster
 directories:
   output: dist

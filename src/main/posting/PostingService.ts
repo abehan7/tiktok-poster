@@ -81,7 +81,7 @@ export class PostingService {
     const entry = this.start(input.openId, entryId, {
       kind: "video",
       mode: input.mode,
-      label: input.mode === "DIRECT" && input.title ? input.title : file.name,
+      label: input.title.split("\n")[0] || file.name, // drafts keep the caption too, for the "draft uploaded" notification
       thumbUrl: file.url,
     });
     this.update(entry.id, { content: videoContent(input, file.url) });
@@ -230,11 +230,14 @@ export class PostingService {
 
   /** Runs the pre-publish work; a failure marks the entry FAILED and rethrows to the form. */
   private async run(entryId: string, work: () => Promise<HistoryEntry>): Promise<HistoryEntry> {
+    const account = this.history.get(entryId)?.openId;
     try {
       const entry = await work();
+      if (account) this.session.noteLogin(account);
       this.poll(entryId);
       return entry;
     } catch (err) {
+      if (account) this.session.noteLogin(account, err);
       const message =
         err instanceof TikTokError
           ? describeTikTokError(err.code, err.message)

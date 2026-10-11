@@ -27,7 +27,7 @@ interface MockPublish {
 export class MockTikTokGateway implements TikTokGateway {
   private readonly publishes = new Map<string, MockPublish>();
   private logins = 0;
-  private static readonly NAMES = ["TubeLingo (mock)", "TubeLingo KR (mock)", "Study Clips (mock)"];
+  private static readonly NAMES = ["Demo Creator (mock)", "Demo Studio (mock)", "Demo Clips (mock)"];
 
   async authorize(scopes: string[]): Promise<TokenGrant> {
     await sleep(600);

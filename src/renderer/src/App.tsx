@@ -1,19 +1,22 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { CalendarDays, Film, History, Images, Settings } from "lucide-react";
+import { CalendarDays, Film, History, Images, LayoutDashboard, Settings } from "lucide-react";
 import logo from "./assets/logo.png";
 import { AccountMenu } from "./components/AccountMenu";
+import type { View } from "@shared/contract";
 import { poster } from "./lib/api";
 import { AppStateProvider, useAppState } from "./lib/app-state";
 import { CarouselView } from "./views/CarouselView";
 import { CalendarView } from "./views/CalendarView";
+import { DashboardView } from "./views/DashboardView";
 import { HistoryView } from "./views/HistoryView";
 import { SettingsView } from "./views/SettingsView";
 import { VideoView } from "./views/VideoView";
 
-type Tab = "video" | "carousel" | "calendar" | "history" | "settings";
+type Tab = View;
 
 const TABS: { id: Tab; label: string; icon: typeof Film; title: string }[] = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, title: "Dashboard" },
   { id: "carousel", label: "Carousel", icon: Images, title: "New photo carousel" },
   { id: "video", label: "Video", icon: Film, title: "New video" },
   { id: "calendar", label: "Calendar", icon: CalendarDays, title: "Calendar" },
@@ -30,8 +33,10 @@ export function App() {
 }
 
 function Shell() {
-  const [tab, setTab] = useState<Tab>("carousel");
-  // App menu: Settings… (⌘,), New Carousel (⌘1), New Video (⌘2), History (⌘3).
+  const [tab, setTab] = useState<Tab>("dashboard");
+  // Account shown in Calendar and History ("all" or an account ID), shared so the dashboard can jump to one.
+  const [account, setAccount] = useState("all");
+  // App menu: Dashboard (⌘0), New Carousel (⌘1), New Video (⌘2), Calendar (⌘3), History (⌘4), Settings… (⌘,).
   useEffect(() => poster.onNavigate(setTab), []);
   const { settings } = useAppState();
   const current = TABS.find((t) => t.id === tab)!;
@@ -76,8 +81,16 @@ function Shell() {
         <main className="flex-1 overflow-y-auto p-6">
           {tab === "video" && <VideoView onPosted={() => setTab("calendar")} />}
           {tab === "carousel" && <CarouselView onPosted={() => setTab("calendar")} />}
-          {tab === "calendar" && <CalendarView />}
-          {tab === "history" && <HistoryView />}
+          {tab === "dashboard" && (
+            <DashboardView
+              onOpenAccount={(id) => {
+                setAccount(id);
+                setTab("calendar");
+              }}
+            />
+          )}
+          {tab === "calendar" && <CalendarView account={account} onAccount={setAccount} />}
+          {tab === "history" && <HistoryView account={account} onAccount={setAccount} />}
           {tab === "settings" && <SettingsView />}
         </main>
       </div>

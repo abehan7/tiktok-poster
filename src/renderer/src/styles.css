@@ -14,6 +14,7 @@
   --warn: #a15c00;
   --bad: #c42a3c;
   --sched: #6d5ce8;
+  --ig: #c13584;
   color-scheme: light;
 }
 
@@ -32,6 +33,7 @@
     --warn: #f0b04a;
     --bad: #ff5a6e;
     --sched: #a594ff;
+    --ig: #f0589c;
     color-scheme: dark;
   }
 }
@@ -50,6 +52,7 @@
   --color-warn: var(--warn);
   --color-bad: var(--bad);
   --color-sched: var(--sched);
+  --color-ig: var(--ig);
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Apple SD Gothic Neo", system-ui, sans-serif;
 }
 
